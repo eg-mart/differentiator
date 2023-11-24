@@ -72,6 +72,7 @@ int main(int argc, const char *argv[])
 		goto error;
 	}
 	TREE_DUMP_GUI(tr, print_math_token, dump);
+	TREE_DUMP_LOG(tr, print_math_token);
 
 	error:
 		buffer_dtor(&buf);
@@ -93,16 +94,16 @@ void print_math_token(char *buf, struct MathToken tok, size_t n)
 		case MATH_OP:
 			switch (tok.value.op) {
 				case MATH_ADD:
-					*buf = '+';
+					strncpy(buf, "+", n);
 					break;
 				case MATH_SUB:
-					*buf = '-';
+					strncpy(buf, "-", n);
 					break;
 				case MATH_DIV:
-					*buf = '/';
+					strncpy(buf, "/", n);
 					break;
 				case MATH_MULT:
-					*buf = '*';
+					strncpy(buf, "*", n);
 					break;
 				default:
 					strncpy(buf, "err: wrong op", n);

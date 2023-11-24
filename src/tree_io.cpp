@@ -37,10 +37,11 @@ static char *skip_space(char *str)
 static size_t get_word_len(const char *str)
 {
 	size_t len = 0;
-	if (!isalpha(str[0]) && str[0] != '_')
+	if (!isalnum(str[0]) && str[0] != '_')
 		return 1;
 	
-	while (str[len] != '\0' && (isalnum(str[len]) || str[len] == '_'))
+	while (str[len] != '\0' && (isalnum(str[len]) ||
+		   str[len] == '_' || str[len] == '.' || str[len] == ','))
 		len++;
 	return len;
 }
@@ -97,13 +98,8 @@ static enum TreeIOError _tree_load(struct Node **tree, struct Buffer *buf)
 	buf->pos = skip_space(buf->pos);
 	size_t word_len = get_word_len(buf->pos);
 
-	if (strncmp(buf->pos, "_", word_len) == 0 && word_len == strlen("_")) {
+	if (strncmp(buf->pos, "(", word_len) == 0 && word_len == strlen("(")) {
 		buf->pos = skip_space(buf->pos + word_len);
-		*tree = NULL;
-		return TRIO_NO_ERR;
-	}
-	if (strncmp(buf->pos, "(", word_len) == 0 && word_len == strlen("("))  {
-		buf->pos += word_len;
 		struct Node *left = NULL;
 		trio_err = _tree_load(&left, buf);
 		if (trio_err < 0)
@@ -113,6 +109,34 @@ static enum TreeIOError _tree_load(struct Node **tree, struct Buffer *buf)
 
 		elem_t read = {};
 		trio_err = read_element(&read, buf);
+		if (trio_err < 0) {
+			node_op_delete(left);
+			return trio_err;
+		}
+
+		enum TreeError tr_err = node_op_new(tree, read);
+		if (tr_err < 0) {
+			node_op_delete(left);
+			return TRIO_TREE_ERR;
+		}
+
+		(*tree)->left = left;
+		trio_err = _tree_load(&(*tree)->right, buf);
+		if (trio_err < 0) {
+			node_op_delete(*tree);
+			return trio_err;
+		}
+
+		buf->pos = skip_space(buf->pos);
+		if (buf->pos[0] != ')')
+			return TRIO_SYNTAX_ERR;
+		(buf->pos)++;
+		
+		return TRIO_NO_ERR;
+	}
+	if (isdigit(*buf->pos)) { //TODO: replace with is_math_token
+		elem_t read = {};
+		trio_err = read_element(&read, buf);
 		if (trio_err < 0)
 			return trio_err;
 
@@ -120,18 +144,14 @@ static enum TreeIOError _tree_load(struct Node **tree, struct Buffer *buf)
 		if (tr_err < 0)
 			return TRIO_TREE_ERR;
 
-		(*tree)->left = left;
-		trio_err = _tree_load(&(*tree)->right, buf);
-		if (trio_err < 0)
-			return trio_err;
+		(*tree)->left = NULL;
+		(*tree)->right = NULL;
 
-		buf->pos = skip_space(buf->pos);
-		if (buf->pos[0] != ')')
-			return TRIO_SYNTAX_ERR;
-		(buf->pos)++;
 		return TRIO_NO_ERR;
 	}
-	return TRIO_SYNTAX_ERR;
+
+	*tree = NULL;
+	return TRIO_NO_ERR;
 }
 
 void tree_save(const struct Node *tree, FILE *out)
