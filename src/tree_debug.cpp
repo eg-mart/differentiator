@@ -136,7 +136,7 @@ void tree_dump_gui(const struct Node *tr, print_func print_el, FILE *dump_html,
 	const char *BEGIN = \
 	"digraph {\n"
 	"graph [dpi = 200, splines=ortho];\n"
-	"node [shape = \"Mrecord\"];\n";
+	"node [shape = \"rectangle\", style=\"rounded\"];\n";
 
 	fputs(BEGIN, dot_file);
 	_subtree_dump_gui(tr, print_el, dot_file, 0);
@@ -172,25 +172,15 @@ static void _subtree_dump_gui(const struct Node *node, print_func print_el,
 	static char buf[ELEM_BUF_SIZE] = {};
 	buf[0] = '\0';
 	print_el(buf, node->data, ELEM_BUF_SIZE - 1);
-	fprintf(dump, "node%lu [label=\"{%s | {", node_id, buf);
-	if (node->left)
-		fputs("да", dump);
-	else
-		fputs("-", dump);
-	fputs(" | ", dump);
-	if (node->right)
-		fputs("нет", dump);
-	else
-		fputs("-", dump);
-	fputs("}}\"]\n", dump);
-
+	fprintf(dump, "node%lu [label=\"%s\"]\n", node_id, buf);
+	
 	_subtree_dump_gui(node->left, print_el, dump, 2 * node_id + 1);
 	_subtree_dump_gui(node->right, print_el, dump, 2 * node_id + 2);
 
 	if (node->left)
-		fprintf(dump, "node%lu -> node%lu [color=green]\n", node_id, 
+		fprintf(dump, "node%lu -> node%lu\n", node_id, 
 				2 * node_id + 1);
 	if (node->right)
-		fprintf(dump, "node%lu -> node%lu [color=red]\n", node_id,
+		fprintf(dump, "node%lu -> node%lu\n", node_id,
 				2 * node_id + 2);
 }

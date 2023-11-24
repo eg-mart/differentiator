@@ -6,7 +6,7 @@
 
 #define TREE_DUMP_LOG(tr, print_el) \
 	tree_dump_log((tr), (print_el), __FILE__, __PRETTY_FUNCTION__, __LINE__, #tr)
-#define TREE_DUMP_GUI(tr, file, print_el) \
+#define TREE_DUMP_GUI(tr, print_el, file) \
 	tree_dump_gui((tr), (print_el), (file), __FILE__, __PRETTY_FUNCTION__, \
 				 __LINE__, #tr)
 

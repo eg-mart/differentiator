@@ -97,7 +97,7 @@ static enum TreeIOError _tree_load(struct Node **tree, struct Buffer *buf)
 	buf->pos = skip_space(buf->pos);
 	size_t word_len = get_word_len(buf->pos);
 
-	if (strncmp(buf->pos, "nil", word_len) == 0 && word_len == strlen("nil")) {
+	if (strncmp(buf->pos, "_", word_len) == 0 && word_len == strlen("_")) {
 		buf->pos = skip_space(buf->pos + word_len);
 		*tree = NULL;
 		return TRIO_NO_ERR;

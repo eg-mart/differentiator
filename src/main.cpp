@@ -12,14 +12,18 @@
 void print_math_token(char *buf, struct MathToken tok, size_t n);
 
 enum ArgError handle_input_filename(const char *arg_str, void *processed_args);
+enum ArgError handle_dump_filename(const char *arg_str, void *processed_args);
 
 struct CmdArgs {
 	const char *input_file;
+	const char *dump_file;
 };
 
 const ArgDef arg_defs[] = {
 	{"input", 'i', "Name of the input file with a formula",
 	 false, false, handle_input_filename},
+	{"dump", 'd', "Name of the html dump file",
+	 false, false, handle_dump_filename},
 };
 
 int main(int argc, const char *argv[])
@@ -36,13 +40,23 @@ int main(int argc, const char *argv[])
 	struct Buffer buf = {};
 	struct Node *tr = NULL;
 
+	FILE *dump = NULL;
+
 	arg_err = process_args(arg_defs, sizeof(arg_defs) / sizeof(arg_defs[0]),
 						   argv, argc, &args);
 	if (arg_err < 0) {
 		log_message(ERROR, arg_err_to_str(arg_err));
 		goto error;
+	} else if (arg_err == ARG_HELP_CALLED) {
+		return 0;
 	}
-	
+
+	dump = tree_start_html_dump(args.dump_file);
+	if (!dump) {
+		log_message(ERROR, "Error opening dump file %s\n", args.dump_file);
+		goto error;
+	}
+
 	buf_err = buffer_ctor(&buf);
 	if (buf_err < 0) {
 		goto error;
@@ -57,7 +71,7 @@ int main(int argc, const char *argv[])
 		log_message(ERROR, tree_io_err_to_str(trio_err));
 		goto error;
 	}
-	TREE_DUMP_LOG(tr, print_math_token);
+	TREE_DUMP_GUI(tr, print_math_token, dump);
 
 	error:
 		buffer_dtor(&buf);
@@ -67,6 +81,7 @@ int main(int argc, const char *argv[])
 
 	buffer_dtor(&buf);
 	node_op_delete(tr);
+	tree_end_html_dump(dump);
 	logger_dtor();
 
 	return 0;
@@ -107,5 +122,12 @@ enum ArgError handle_input_filename(const char *arg_str, void *processed_args)
 {
 	struct CmdArgs *args = (struct CmdArgs*) processed_args;
 	args->input_file = arg_str;
+	return ARG_NO_ERR;
+}
+
+enum ArgError handle_dump_filename(const char *arg_str, void *processed_args)
+{
+	struct CmdArgs *args = (struct CmdArgs*) processed_args;
+	args->dump_file = arg_str;
 	return ARG_NO_ERR;
 }
