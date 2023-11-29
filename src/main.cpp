@@ -7,7 +7,7 @@
 #include "tree_io.h"
 #include "equation_utils.h"
 #include "buffer.h"
-#include "cmd_args.h"
+#include "../lib-cmd-args/src/cmd_args.h"
 
 void print_math_token(char *buf, struct MathToken tok, size_t n);
 

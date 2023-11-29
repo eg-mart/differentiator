@@ -1,0 +1,3 @@
+[submodule "lib-cmd-args"]
+	path = lib-cmd-args
+	url = https://github.com/eg-mart/cmd-args

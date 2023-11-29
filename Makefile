@@ -21,6 +21,7 @@ CC = g++
 EXE = differentiator
 SRCDIR = src
 OBJDIR = build
+SUBMODS = lib-cmd-args
 
 FILES = $(wildcard $(SRCDIR)/*.cpp)
 OBJS_NAMES = $(FILES:$(SRCDIR)/%.cpp=%.o)
@@ -28,11 +29,15 @@ OBJS = $(addprefix $(OBJDIR)/, $(OBJS_NAMES))
 
 all : $(EXE)
 
-$(EXE) : $(OBJS)
-	@$(CC) $(CFLAGS) -o $(EXE) $(OBJS)
+$(EXE) : $(OBJS) $(SUBMODS)
+	@$(CC) $(CFLAGS) -o $(EXE) $(wildcard $(addsuffix /$(OBJDIR)/*.o, $(SUBMODS))) $(OBJS)
 
 $(OBJS): $(OBJDIR)/%.o: $(SRCDIR)/%.cpp | $(OBJDIR)
 	@$(CC) $(CFLAGS) -c $< -o $@
+
+.PHONY : $(SUBMODS)
+$(SUBMODS) :
+	$(MAKE) -C $@
 
 $(OBJDIR):
 	mkdir -p $(OBJDIR)
