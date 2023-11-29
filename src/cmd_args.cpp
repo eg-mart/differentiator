@@ -4,8 +4,6 @@
 #include "cmd_args.h"
 #include "logger.h"
 
-static void arg_help_cmd(const struct ArgDef arg_defs[], size_t arg_defs_size);
-
 enum ArgError process_args(const struct ArgDef arg_defs[], size_t arg_defs_size, 
 						   const char *argv[], int argc, void *processed_args)
 {
@@ -41,12 +39,13 @@ enum ArgError process_args(const struct ArgDef arg_defs[], size_t arg_defs_size,
 				}
 			}
 			if (strcmp(argv[i] + 2, "help") == 0) {
-				arg_help_cmd(arg_defs, arg_defs_size);
+				arg_show_usage(arg_defs, arg_defs_size, argv[0]);
 				return ARG_HELP_CALLED;
 			}
 		} else if (argv[i][0] == '-') {
 			const char *short_name = argv[i] + 1;
 			while (*short_name != '\0') {
+				bool processed = false;
 				for (size_t def_ind = 0; def_ind < arg_defs_size; def_ind++) {
 					if (!arg_defs[def_ind].short_name)
 						continue;
@@ -71,13 +70,16 @@ enum ArgError process_args(const struct ArgDef arg_defs[], size_t arg_defs_size,
 						if (!arg_defs[def_ind].is_flag)
 							i += 1;
 
+						processed = true;
 						break;
 					}
 				}
 				if (*short_name == 'h') {
-					arg_help_cmd(arg_defs, arg_defs_size);
+					arg_show_usage(arg_defs, arg_defs_size, argv[0]);
 					return ARG_HELP_CALLED;
 				}
+				if (!processed)
+					return ARG_WRONG_ARGS_ERR;
 			}
 			i++;
 		} else {
@@ -116,14 +118,38 @@ const char *arg_err_to_str(enum ArgError err)
 	}
 }
 
-static void arg_help_cmd(const struct ArgDef arg_defs[], size_t arg_defs_size)
+void arg_show_usage(const struct ArgDef arg_defs[], size_t arg_defs_size,
+					const char* program_name)
 {
+	printf("Usage: %s", program_name);
 	for (size_t i = 0; i < arg_defs_size; i++) {
-		if (arg_defs[i].short_name)
-			printf("-%c\n", arg_defs[i].short_name);
+		printf(" ");
+		if (arg_defs[i].is_optional)
+			printf("[");
+		else
+			printf("(");
+
 		if (arg_defs[i].long_name)
-			printf("--%s\n", arg_defs[i].long_name);
+			printf("--%s", arg_defs[i].long_name);
+		if (arg_defs[i].long_name && arg_defs[i].short_name)
+			printf(" ");
+		if (arg_defs[i].short_name)
+			printf("-%c", arg_defs[i].short_name);
+
+		if (!arg_defs[i].is_flag)
+			printf(" ...");
+		if (arg_defs[i].is_optional)
+			printf("]");
+		else
+			printf(")");
+	}
+	printf("\n\n");
+	for (size_t i = 0; i < arg_defs_size; i++) {
+		if (arg_defs[i].long_name)
+			printf("--%s", arg_defs[i].long_name);
+		if (arg_defs[i].short_name)
+			printf(" -%c", arg_defs[i].short_name);
 		if (arg_defs[i].description)
-			printf("\t%s\n\n", arg_defs[i].description);
+			printf(" \t%s\n", arg_defs[i].description);
 	}
 }

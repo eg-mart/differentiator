@@ -23,6 +23,8 @@ struct ArgDef {
 
 enum ArgError process_args(const struct ArgDef arg_defs[], size_t arg_defs_size,
 						   const char *argv[], int argc, void *processed_args);
+void arg_show_usage(const struct ArgDef arg_defs[], size_t arg_defs_size,
+					const char *program_name);
 const char *arg_err_to_str(enum ArgError err);
 
 #endif /*_CMD_ARGS_H*/

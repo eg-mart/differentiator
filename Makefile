@@ -16,14 +16,14 @@ CFLAGS = -D _DEBUG -ggdb3 -std=c++17 -O0 -Wall -Wextra -Weffc++\
 
 CC = g++
 
-VPATH = src
 .PHONY : clean
 
 EXE = differentiator
-FILE_PATHS = $(wildcard src/*.cpp)
-FILES = $(FILE_PATHS:src/%=%)
-OBJS_NAMES = $(FILES:.cpp=.o)
+SRCDIR = src
 OBJDIR = build
+
+FILES = $(wildcard $(SRCDIR)/*.cpp)
+OBJS_NAMES = $(FILES:$(SRCDIR)/%.cpp=%.o)
 OBJS = $(addprefix $(OBJDIR)/, $(OBJS_NAMES))
 
 all : $(EXE)
@@ -31,7 +31,7 @@ all : $(EXE)
 $(EXE) : $(OBJS)
 	@$(CC) $(CFLAGS) -o $(EXE) $(OBJS)
 
-$(OBJS): $(OBJDIR)/%.o: %.cpp | $(OBJDIR)
+$(OBJS): $(OBJDIR)/%.o: $(SRCDIR)/%.cpp | $(OBJDIR)
 	@$(CC) $(CFLAGS) -c $< -o $@
 
 $(OBJDIR):

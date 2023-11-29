@@ -1,7 +1,18 @@
 #ifndef _TREE_H
 #define _TREE_H
 
-#include "differentiator.h"
+#include "math_funcs.h"
+
+union MathTokenValue {
+	double num;
+	enum MathOp op;
+	char varname;
+};
+
+struct MathToken {
+	enum MathTokenType type;
+	union MathTokenValue value;
+};
 
 typedef MathToken elem_t;
 

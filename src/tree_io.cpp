@@ -4,15 +4,17 @@
 #include <math.h>
 
 #include "tree_io.h"
-#include "differentiator.h"
 #include "logger.h"
 
 static char *skip_space(char *str);
 static size_t get_word_len(const char *str);
+static bool is_math_token(const char *str);
 
 static enum TreeIOError read_element(elem_t *data, struct Buffer *buf);
-static enum TreeIOError _tree_load(struct Node **tree, struct Buffer *buf);
-static void _subtree_save(const struct Node *node, FILE *out, size_t level);
+static enum TreeIOError subtree_load(struct Node **tree, struct Buffer *buf);
+
+static void print_element(elem_t data, FILE *file);
+static void subtree_print(const struct Node *node, FILE *out);
 
 enum TreeIOError tree_load_from_buf(struct Node **tree, struct Buffer *buf)
 {
@@ -20,7 +22,7 @@ enum TreeIOError tree_load_from_buf(struct Node **tree, struct Buffer *buf)
 	assert(buf);
 
 	buffer_reset(buf);
-	enum TreeIOError err = _tree_load(tree, buf);
+	enum TreeIOError err = subtree_load(tree, buf);
 	buffer_reset(buf);
 	return err;
 }
@@ -72,6 +74,11 @@ static enum TreeIOError read_element(elem_t *data, struct Buffer *buf)
 			data->type = MATH_OP;
 			buf->pos++;
 			return TRIO_NO_ERR;
+		case '^':
+			data->value.op = MATH_POW;
+			data->type = MATH_OP;
+			buf->pos++;
+			return TRIO_NO_ERR;
 		default:
 			break;
 	}
@@ -79,7 +86,10 @@ static enum TreeIOError read_element(elem_t *data, struct Buffer *buf)
 	double num = NAN;
 	int read = 0;
 	if (sscanf(buf->pos, "%lf%n", &num, &read) != 1) {
-		return TRIO_SYNTAX_ERR;
+		data->type = MATH_VAR;
+		data->value.varname = *buf->pos;
+		buf->pos++;
+		return TRIO_NO_ERR;
 	}
 	data->type = MATH_NUM;
 	data->value.num = num;
@@ -88,7 +98,7 @@ static enum TreeIOError read_element(elem_t *data, struct Buffer *buf)
 	return TRIO_NO_ERR;
 }
 
-static enum TreeIOError _tree_load(struct Node **tree, struct Buffer *buf)
+static enum TreeIOError subtree_load(struct Node **tree, struct Buffer *buf)
 {
 	assert(tree);
 	assert(buf);
@@ -101,7 +111,7 @@ static enum TreeIOError _tree_load(struct Node **tree, struct Buffer *buf)
 	if (strncmp(buf->pos, "(", word_len) == 0 && word_len == strlen("(")) {
 		buf->pos = skip_space(buf->pos + word_len);
 		struct Node *left = NULL;
-		trio_err = _tree_load(&left, buf);
+		trio_err = subtree_load(&left, buf);
 		if (trio_err < 0)
 			return trio_err;
 
@@ -121,7 +131,7 @@ static enum TreeIOError _tree_load(struct Node **tree, struct Buffer *buf)
 		}
 
 		(*tree)->left = left;
-		trio_err = _tree_load(&(*tree)->right, buf);
+		trio_err = subtree_load(&(*tree)->right, buf);
 		if (trio_err < 0) {
 			node_op_delete(*tree);
 			return trio_err;
@@ -134,7 +144,7 @@ static enum TreeIOError _tree_load(struct Node **tree, struct Buffer *buf)
 		
 		return TRIO_NO_ERR;
 	}
-	if (isdigit(*buf->pos)) { //TODO: replace with is_math_token
+	if (is_math_token(buf->pos)) {
 		elem_t read = {};
 		trio_err = read_element(&read, buf);
 		if (trio_err < 0)
@@ -150,36 +160,87 @@ static enum TreeIOError _tree_load(struct Node **tree, struct Buffer *buf)
 		return TRIO_NO_ERR;
 	}
 
-	*tree = NULL;
-	return TRIO_NO_ERR;
+	return TRIO_SYNTAX_ERR;
 }
 
-void tree_save(const struct Node *tree, FILE *out)
+static bool is_math_token(const char *str)
 {
-	assert(out);
-
-	_subtree_save(tree, out, 0);
-}
-
-void _subtree_save(const struct Node *node, FILE *out, size_t level)
-{
-	assert(out);
-
-	for (size_t i = 0; i < level; i++)
-		fputs("    ", out);
-	
-	if (!node) {
-		fputs("nil\n", out);
-		return;
+	size_t tok_len = get_word_len(str);
+	size_t alpha_cnt = 0;
+	bool is_num = true;
+	for (size_t i = 0; i < tok_len; i++) {
+		if (!isdigit(str[i]) && str[i] != '.' && str[i] != ',') {
+			is_num = false;
+			if (isalpha(str[i]))
+				alpha_cnt++;
+		}
 	}
+	return (alpha_cnt == 1) || is_num;
+}
 
-	fprintf(out, "(<%s>\n", node->data);
-	_subtree_save(node->left, out, level + 1);
-	_subtree_save(node->right, out, level + 1);
+void tree_print(const struct Node *tree, FILE *out)
+{
+	assert(out);
+	assert(tree);
 
-	for (size_t i = 0; i < level; i++)
-		fputs("    ", out);
-	fputs(")\n", out);
+	subtree_print(tree, out);
+	fputs("\n", out);
+}
+
+void print_element(elem_t data, FILE *out)
+{
+	switch (data.type) {
+		case MATH_OP:
+			switch (data.value.op) {
+				case MATH_ADD:
+					fputs("+", out);
+					return;
+				case MATH_SUB:
+					fputs("-", out);
+					return;
+				case MATH_DIV:
+					fputs("/", out);
+					return;
+				case MATH_MULT:
+					fputs("*", out);
+					return;
+				case MATH_POW:
+					fputs("^", out);
+					return;
+				default:
+					fputs("?", out);
+					return;
+			}
+		case MATH_NUM:
+			fprintf(out, "%.lf", data.value.num);
+			return;
+		case MATH_VAR:
+			putc(data.value.varname, out);
+			return;
+		default:
+			fputs("?", out);
+			return;
+	}
+}
+
+void subtree_print(const struct Node *node, FILE *out)
+{
+	assert(out);
+
+	if (!node)
+		return;
+	
+	if (node->data.type == MATH_OP)
+		fputs("(", out);
+	subtree_print(node->left, out);
+	if (node->data.type == MATH_OP)
+		fputs(" ", out);
+	print_element(node->data, out);
+	if (node->data.type == MATH_OP)
+		fputs(" ", out);
+	subtree_print(node->right, out);
+	if (node->data.type == MATH_OP)
+		fputs(")", out);
 }
 
 const char *tree_io_err_to_str(enum TreeIOError err)

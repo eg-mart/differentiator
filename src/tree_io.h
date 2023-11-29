@@ -11,7 +11,7 @@ enum TreeIOError {
 };
 
 enum TreeIOError tree_load_from_buf(struct Node **tree, struct Buffer *buf);
-void tree_save(const struct Node *tree, FILE *out);
+void tree_print(const struct Node *tree, FILE *out);
 const char *tree_io_err_to_str(enum TreeIOError err);
 
 #endif /*_TREE_IO_H*/
