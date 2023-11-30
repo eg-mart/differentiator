@@ -1,7 +1,18 @@
 #ifndef _TREE_H
 #define _TREE_H
 
-#include "math_funcs.h"
+enum MathOp {
+	MATH_ADD,
+	MATH_MULT,
+	MATH_SUB,
+	MATH_DIV,
+};
+
+enum MathTokenType {
+	MATH_NUM,
+	MATH_OP,
+	MATH_VAR,
+};
 
 union MathTokenValue {
 	double num;
