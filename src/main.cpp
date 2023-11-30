@@ -45,6 +45,7 @@ int main(int argc, const char *argv[])
 	struct Node *diff = NULL;
 
 	FILE *dump = NULL;
+	FILE *latex = fopen("main.tex", "w");
 
 	arg_err = process_args(arg_defs, ARG_DEFS_SIZE, argv, argc, &args);
 	if (arg_err < 0) {
@@ -90,6 +91,12 @@ int main(int argc, const char *argv[])
 	//TREE_DUMP_GUI(diff, eq_print_token, dump);
 	eq_print(tr, stdout);
 	eq_print(diff, stdout);
+
+	eq_start_latex_print(latex);
+	eq_print_latex(tr, latex);
+	eq_print_latex(diff, latex);
+	eq_end_latex_print(latex);
+	eq_gen_latex_pdf("main.tex");
 
 	goto finally;
 

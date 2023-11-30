@@ -43,16 +43,17 @@ enum EquationError math_simplify_div(struct Node *equation);
 
 struct MathOpDefinition {
 	const char  *name;
+	int priority;
 	op_diff 	diff;
 	op_eval 	eval;
 	op_simplify simplify;
 };
 	
 const struct MathOpDefinition MATH_OP_DEFS[] = {
-	{ "+", math_diff_add,  math_eval_add,  math_simplify_add  },
-	{ "*", math_diff_mult, math_eval_mult, math_simplify_mult },
-	{ "-", math_diff_sub,  math_eval_sub,  math_simplify_sub  },
-	{ "/", math_diff_div,  math_eval_div,  math_simplify_div  },
+	{ "+", 2, math_diff_add,  math_eval_add,  math_simplify_add  },
+	{ "*", 1, math_diff_mult, math_eval_mult, math_simplify_mult },
+	{ "-", 2, math_diff_sub,  math_eval_sub,  math_simplify_sub  },
+	{ "/", 1, math_diff_div,  math_eval_div,  math_simplify_div  },
 };
 const size_t MATH_OP_DEFS_SIZE = sizeof(MATH_OP_DEFS) / 
 								 sizeof(MATH_OP_DEFS[0]);

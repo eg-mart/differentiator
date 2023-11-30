@@ -15,8 +15,14 @@ const char *const CLOSE_DELIM = ")";
 
 enum EquationIOError eq_load_from_buf(struct Node **equation,
 									  struct Buffer *buf);
+
 void eq_print_token(char *buf, struct MathToken tok, size_t n);
 void eq_print(const struct Node *equation, FILE *out);
+void eq_start_latex_print(FILE *out);
+void eq_print_latex(const struct Node *equation, FILE *out);
+void eq_end_latex_print(FILE *out);
+void eq_gen_latex_pdf(const char *filename);
+
 const char *eq_io_err_to_str(enum EquationIOError err);
 
 #endif /*_TREE_IO_H*/

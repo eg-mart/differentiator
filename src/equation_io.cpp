@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <string.h>
 #include <math.h>
+#include <stdlib.h>
 
 #include "equation_io.h"
 #include "logger.h"
@@ -15,7 +16,9 @@ static bool is_math_op(const char *str);
 static enum EquationIOError read_element(struct MathToken *data,
 										 struct Buffer *buf);
 static enum EquationIOError subtree_load(struct Node **tree, struct Buffer *buf);
+
 static void subtree_print(const struct Node *node, FILE *out);
+static void subtree_print_latex(const struct Node *eq, FILE *out);
 
 enum EquationIOError eq_load_from_buf(struct Node **equation, struct Buffer *buf)
 {
@@ -226,6 +229,82 @@ void subtree_print(const struct Node *node, FILE *out)
 	subtree_print(node->right, out);
 	if (node->data.type == MATH_OP)
 		fputs(")", out);
+}
+
+static void subtree_print_latex(const struct Node *eq, FILE *out)
+{
+	assert(out);
+
+	if (!eq)
+		return;
+
+	switch (eq->data.type) {
+		case MATH_NUM:
+			fprintf(out, "%.2lf", eq->data.value.num);
+			return;
+		case MATH_VAR:
+			fprintf(out, "%c", eq->data.value.varname);
+			return;
+		case MATH_OP:
+			switch (eq->data.value.op) {
+				case MATH_DIV:
+					fprintf(out, "\\frac{");
+					subtree_print_latex(eq->left, out);
+					fprintf(out, "}{");
+					subtree_print_latex(eq->right, out);
+					fprintf(out, "}");
+					break;
+				case MATH_ADD:
+				case MATH_SUB:
+				case MATH_MULT:
+				default:
+					fprintf(out, "(");
+					subtree_print_latex(eq->left, out);
+					fprintf(out, " %s ", MATH_OP_DEFS[eq->data.value.op].name);
+					subtree_print_latex(eq->right, out);
+					fprintf(out, ")");
+					break;
+			}
+			return;
+		default:
+			fprintf(out, "UNKNOWN");
+			return;
+	}
+}
+
+void eq_print_latex(const struct Node *equation, FILE *out)
+{
+	fprintf(out, "\\begin{equation}\n");
+	subtree_print_latex(equation, out);
+	fprintf(out, "\\end{equation}\n");
+}
+
+void eq_start_latex_print(FILE *out)
+{
+	fprintf(out, "\\documentclass[a4paper,12pt]{article}\n"
+			"\\usepackage[T2A]{fontenc}\n"
+			"\\usepackage[utf8]{inputenc}\n"
+			"\\usepackage[english,russian]{babel}\n"
+			"\\author{Мартыненко Егор, Б01-302}\n"
+			"\\title{Учебник по матану. Введение}\n"
+			"\\begin{document}\n"
+			"\\maketitle\n");
+}
+
+void eq_end_latex_print(FILE *out)
+{
+	fprintf(out, "\n\\end{document}");
+	fclose(out);
+}
+
+void eq_gen_latex_pdf(const char *filename)
+{
+	const size_t CMD_BUF_SIZE = 512;
+	char cmd_buf[CMD_BUF_SIZE] = "pdflatex >/dev/null \"";
+	size_t prefix_len = strlen(cmd_buf);
+	strncat(cmd_buf, filename, CMD_BUF_SIZE - prefix_len);
+	strncat(cmd_buf, "\"", CMD_BUF_SIZE - prefix_len - strlen(filename));
+	system(cmd_buf);
 }
 
 const char *eq_io_err_to_str(enum EquationIOError err)
