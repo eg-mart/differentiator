@@ -23,5 +23,9 @@ enum EquationError eq_differentiate(struct Equation eq, size_t diff_var_ind,
 enum EquationError eq_simplify(struct Equation *eq);
 enum EquationError eq_evaluate(struct Equation equation, double *vals,
 							   double *res);
+enum EquationError eq_expand_into_teylor(struct Equation eq,
+										 size_t extent,
+										 struct Equation *teylor);
+
 
 #endif /*_EQUATION_UTILS_H*/

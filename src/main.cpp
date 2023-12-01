@@ -16,12 +16,14 @@ enum ArgError handle_input_filename(const char *arg_str, void *processed_args);
 enum ArgError handle_dump_filename(const char *arg_str, void *processed_args);
 enum ArgError handle_latex_filename(const char *arg_str, void *processed_args);
 enum ArgError handle_eval_mode(const char *arg_str, void *processed_args);
+enum ArgError handle_teylor_extent(const char *arg_str, void *processed_args);
 
 struct CmdArgs {
 	const char *input_file;
 	const char *dump_file;
 	const char *latex_file;
 	bool eval_mode;
+	size_t teylor_extent;
 };
 
 const ArgDef arg_defs[] = {
@@ -33,6 +35,8 @@ const ArgDef arg_defs[] = {
 	 true, false, handle_latex_filename},
 	{"eval",  '\0', "Evaluate the derivative at a certain point",
 	 true, true,  handle_eval_mode},
+	{"teylor",'\0', "Set extent to which equation will be expanded into"
+	 " Teylor's series (3 by default)", true, false, handle_teylor_extent},
 };
 const size_t ARG_DEFS_SIZE = sizeof(arg_defs) / sizeof(arg_defs[0]);
 
@@ -48,10 +52,11 @@ int main(int argc, const char *argv[])
 	enum EquationIOError eqio_err = EQIO_NO_ERR;
 	enum EquationError eq_err = EQ_NO_ERR;
 
-	struct CmdArgs args = {};
+	struct CmdArgs args = {NULL, NULL, NULL, false, 3};
 	struct Buffer buf = {};
 	struct Equation eq = {};
 	struct Equation diff = {};
+	struct Equation teylor = {};
 
 	double *vals = NULL;
 	double res = NAN;
@@ -114,19 +119,25 @@ int main(int argc, const char *argv[])
 		eq_start_latex_print(latex);
 	}
 
-	TREE_DUMP_GUI(eq, eq_print_token, dump);
 	eq_print(eq, stdout);
-	if (latex)
+	if (dump)
+		TREE_DUMP_GUI(eq, eq_print_token, dump);
+	if (latex) {
+		fprintf(latex, "Исходное уравнение:\n");
 		eq_print_latex(eq, latex);
+	}
 
 	eq_err = eq_differentiate(eq, 0, &diff);
 	if (eq_err < 0) {
 		log_message(ERROR, "An error happened while differentiating\n");
 		goto error;
 	}
-	TREE_DUMP_GUI(diff, eq_print_token, dump);
-	if (latex)
+	if (dump)
+		TREE_DUMP_GUI(diff, eq_print_token, dump);
+	if (latex) {
+		fprintf(latex, "Производная (без упрощений):");
 		eq_print_latex(diff, latex);
+	}
 
 	eq_err = eq_simplify(&diff);
 	if (eq_err < 0) {
@@ -134,9 +145,12 @@ int main(int argc, const char *argv[])
 		goto error;
 	}
 	eq_print(diff, stdout);
-	TREE_DUMP_GUI(diff, eq_print_token, dump);
-	if (latex)
+	if (dump)
+		TREE_DUMP_GUI(diff, eq_print_token, dump);
+	if (latex) {
+		fprintf(latex, "Производная (упрощенная):\n");
 		eq_print_latex(diff, latex);
+	}
 
 	if (args.eval_mode) {
 		eq_read_var_values_cli(diff, &vals);
@@ -146,6 +160,29 @@ int main(int argc, const char *argv[])
 			goto error;
 		}
 		printf("Значение производной:\n%lf\n", res);
+	}
+
+	eq_err = eq_ctor(&teylor);
+	if (eq_err < 0) {
+		log_message(ERROR, "An error happened while teyloring\n");
+		goto error;
+	}
+
+	eq_err = eq_expand_into_teylor(eq, args.teylor_extent, &teylor);
+	if (eq_err < 0) {
+		log_message(ERROR, "An error happened while teyloring\n");
+		goto error;
+	}
+	eq_err = eq_simplify(&teylor);
+	if (eq_err < 0) {
+		log_message(ERROR, "An error happened while teyloring\n");
+		goto error;
+	}
+	if (dump)
+		TREE_DUMP_GUI(teylor, eq_print_token, dump);
+	if (latex) {
+		fprintf(latex, "Ряд Тейлора:\n");
+		eq_print_latex(teylor, latex);
 	}
 
 	if (latex) {
@@ -162,10 +199,12 @@ int main(int argc, const char *argv[])
 		goto finally;
 
 	finally:
-		tree_end_html_dump(dump);
+		if (dump)
+			tree_end_html_dump(dump);
 		free(vals);
 		eq_dtor(&eq);
 		eq_dtor(&diff);
+		eq_dtor(&teylor);
 		buffer_dtor(&buf);
 		if (latex)
 			fclose(latex);
@@ -199,5 +238,14 @@ enum ArgError handle_eval_mode(const char */*arg_str*/, void *processed_args)
 {
 	struct CmdArgs *args = (struct CmdArgs*) processed_args;
 	args->eval_mode = true;
+	return ARG_NO_ERR;
+}
+
+enum ArgError handle_teylor_extent(const char *arg_str, void *processed_args)
+{
+	struct CmdArgs *args = (struct CmdArgs*) processed_args;
+	int read = sscanf(arg_str, "%lu", &args->teylor_extent);
+	if (read != 1)
+		return ARG_WRONG_ARGS_ERR;
 	return ARG_NO_ERR;
 }

@@ -18,6 +18,7 @@ static struct Node *eq_copy(struct Node *equation, enum EquationError *err);
 static struct Node *eq_new_operator(enum MathOp op, struct Node *left,
 									struct Node *right, enum EquationError *err);
 static struct Node *eq_new_number(double num, enum EquationError *err);
+static struct Node *eq_new_variable(size_t var_ind, enum EquationError *err);
 static void eq_change_to_num(struct Node *equation, double num);
 static void eq_change_to_op(struct Node *equation, enum MathOp op,
 							struct Node *left, struct Node *right);
@@ -70,6 +71,7 @@ enum EquationError eq_differentiate(struct Equation eq, size_t diff_var_ind,
 	diff->var_names = tmp;
 	memcpy(diff->var_names, eq.var_names, eq.cap_vars * sizeof(char*));
 	diff->num_vars = eq.num_vars;
+	diff->cap_vars = eq.cap_vars;
 
 	enum EquationError err = EQ_NO_ERR;
 	diff->tree = subeq_differentiate(eq.tree, diff_var_ind, &err);
@@ -199,6 +201,76 @@ static enum EquationError subeq_evaluate(struct Node *subeq, double *vals,
 	return EQ_NO_ERR;
 }
 
+enum EquationError eq_expand_into_teylor(struct Equation eq,
+										 size_t extent,
+										 struct Equation *teylor)
+{
+	assert(teylor);
+	assert(eq.num_vars <= 1); //can expand only one-variable functions
+
+	char **tmp = (char**) realloc(teylor->var_names,
+								  eq.cap_vars * sizeof(char*));
+	if (!tmp)
+		return EQ_NO_MEM_ERR;
+	teylor->var_names = tmp;
+	memcpy(teylor->var_names, eq.var_names, eq.cap_vars * sizeof(char*));
+	teylor->num_vars = eq.num_vars;
+	teylor->cap_vars = eq.cap_vars;
+
+	enum EquationError eq_err = EQ_NO_ERR;
+	enum EquationError *err = &eq_err;
+
+	double vals[] = { 0.0 };
+	double coeff = NAN;
+	double n_fact = 1;
+
+	struct Equation n_diff = {};
+	struct Equation eq_tmp = {};
+
+	eq_err = eq_ctor(&n_diff);
+	if (eq_err < 0)
+		return eq_err;
+	eq_err = eq_differentiate(eq, 0, &n_diff);
+	if (eq_err < 0)
+		return eq_err;
+	eq_err = eq_simplify(&n_diff);
+	if (eq_err < 0)
+		return eq_err;
+	eq_err = eq_evaluate(eq, vals, &coeff);
+	if (eq_err < 0)
+		return eq_err;
+	teylor->tree = new_num(coeff);
+	if (eq_err < 0)
+		return eq_err;
+
+	for (size_t n = 1; n <= extent; n++) {
+		n_fact *= (double) n;
+		eq_err = eq_evaluate(n_diff, vals, &coeff);
+		if (eq_err < 0)
+			return eq_err;
+		teylor->tree =
+			new_op(MATH_ADD, teylor->tree,
+				   new_op(MATH_MULT, new_op(MATH_DIV, new_num(coeff),
+				   							new_num(n_fact)),
+				   		  new_op(MATH_POW, new_var(0), new_num((double) n))));
+		if (eq_err < 0)
+			return eq_err;
+		eq_err = eq_differentiate(n_diff, 0, &eq_tmp);
+		if (eq_err < 0)
+			return eq_err;
+		node_op_delete(n_diff.tree);
+		n_diff.tree = eq_tmp.tree;
+		eq_tmp.tree = NULL;
+		eq_err = eq_simplify(&n_diff);
+		if (eq_err < 0)
+			return eq_err;
+	}
+	eq_dtor(&n_diff);
+	eq_dtor(&eq_tmp);
+
+	return EQ_NO_ERR;
+}
+
 static struct Node *eq_copy(struct Node *equation, enum EquationError *err)
 {
 	assert(err);
@@ -260,6 +332,30 @@ static struct Node *eq_new_number(double num, enum EquationError *err)
 	struct MathToken data = {};
 	data.type = MATH_NUM;
 	data.value.num = num;
+	struct Node *new_node = NULL;
+	enum TreeError tr_err = node_op_new(&new_node, data);
+
+	if (tr_err == TREE_NO_MEM_ERR) {
+		*err = EQ_NO_MEM_ERR;
+		return NULL;
+	} else if (tr_err < 0) {
+		*err = EQ_TREE_ERR;
+		return NULL;
+	}
+
+	new_node->left = NULL;
+	new_node->right = NULL;
+
+	return new_node;
+}
+
+static struct Node *eq_new_variable(size_t var_ind, enum EquationError *err)
+{
+	assert(err);
+
+	struct MathToken data = {};
+	data.type = MATH_VAR;
+	data.value.var_ind = var_ind;
 	struct Node *new_node = NULL;
 	enum TreeError tr_err = node_op_new(&new_node, data);
 
