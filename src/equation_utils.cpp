@@ -229,46 +229,47 @@ enum EquationError eq_expand_into_teylor(struct Equation eq,
 
 	eq_err = eq_ctor(&n_diff);
 	if (eq_err < 0)
-		return eq_err;
+		goto finally;
 	eq_err = eq_differentiate(eq, 0, &n_diff);
 	if (eq_err < 0)
-		return eq_err;
+		goto finally;
 	eq_err = eq_simplify(&n_diff);
 	if (eq_err < 0)
-		return eq_err;
+		goto finally;
 	eq_err = eq_evaluate(eq, vals, &coeff);
 	if (eq_err < 0)
-		return eq_err;
+		goto finally;
 	teylor->tree = new_num(coeff);
 	if (eq_err < 0)
-		return eq_err;
+		goto finally;
 
 	for (size_t n = 1; n <= extent; n++) {
 		n_fact *= (double) n;
 		eq_err = eq_evaluate(n_diff, vals, &coeff);
 		if (eq_err < 0)
-			return eq_err;
+			goto finally;
 		teylor->tree =
 			new_op(MATH_ADD, teylor->tree,
 				   new_op(MATH_MULT, new_op(MATH_DIV, new_num(coeff),
 				   							new_num(n_fact)),
 				   		  new_op(MATH_POW, new_var(0), new_num((double) n))));
 		if (eq_err < 0)
-			return eq_err;
+			goto finally;
 		eq_err = eq_differentiate(n_diff, 0, &eq_tmp);
 		if (eq_err < 0)
-			return eq_err;
+			goto finally;
 		node_op_delete(n_diff.tree);
 		n_diff.tree = eq_tmp.tree;
 		eq_tmp.tree = NULL;
 		eq_err = eq_simplify(&n_diff);
 		if (eq_err < 0)
-			return eq_err;
+			goto finally;
 	}
-	eq_dtor(&n_diff);
-	eq_dtor(&eq_tmp);
 
-	return EQ_NO_ERR;
+	finally:
+		eq_dtor(&n_diff);
+		eq_dtor(&eq_tmp);
+		return eq_err;
 }
 
 static struct Node *eq_copy(struct Node *equation, enum EquationError *err)
@@ -552,7 +553,7 @@ struct Node *math_diff_div(const struct Node *equation, size_t var,
 				  new_op(MATH_SUB,
 				  		 new_op(MATH_MULT, diff(eq_left), copy(eq_right)),
 				  		 new_op(MATH_MULT, copy(eq_left), diff(eq_right))),
-				  new_op(MATH_MULT, copy(eq_right), copy(eq_right)));
+				  new_op(MATH_POW, copy(eq_right), new_num(2)));
 }
 
 double math_eval_div(double l, double r, enum EquationError *err)

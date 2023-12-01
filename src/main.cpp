@@ -181,7 +181,7 @@ int main(int argc, const char *argv[])
 	if (dump)
 		TREE_DUMP_GUI(teylor, eq_print_token, dump);
 	if (latex) {
-		fprintf(latex, "Ряд Тейлора:\n");
+		fprintf(latex, "Формула Тейлора:\n");
 		eq_print_latex(teylor, latex);
 	}
 
