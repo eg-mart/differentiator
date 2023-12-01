@@ -1,21 +1,29 @@
 #include <stddef.h>
 #include <assert.h>
 #include <math.h>
+#include <string.h>
+#include <stdlib.h>
 
 #include "equation_utils.h"
 #include "logger.h"
+
+static struct Node *subeq_differentiate(const struct Node *equation, 
+										size_t diff_var_ind,
+										enum EquationError *err);
+static enum EquationError subeq_simplify(struct Node *equation);
+static enum EquationError subeq_evaluate(struct Node *subeq, double *vals,
+										 double *res);
 
 static struct Node *eq_copy(struct Node *equation, enum EquationError *err);
 static struct Node *eq_new_operator(enum MathOp op, struct Node *left,
 									struct Node *right, enum EquationError *err);
 static struct Node *eq_new_number(double num, enum EquationError *err);
-static struct Node *eq_new_variable(char varname, enum EquationError *err);
 static void eq_change_to_num(struct Node *equation, double num);
 static void eq_change_to_op(struct Node *equation, enum MathOp op,
 							struct Node *left, struct Node *right);
 static bool is_equal(double a, double b);
 
-#define diff(eq)			eq_differentiate((eq), var, err)
+#define diff(eq)			subeq_differentiate((eq), var, err)
 #define copy(eq) 			eq_copy((eq), err)
 #define new_op(op, l, r)	eq_new_operator((op), (l), (r), err)
 #define new_num(num)		eq_new_number((num), err)
@@ -27,22 +35,62 @@ static bool is_equal(double a, double b);
 #define eq_right 		 	equation->right
 #define type(eq)		 	(eq)->data.type
 #define num(eq)			 	(eq)->data.value.num
-#define var(eq)			 	(eq)->data.value.varname
+#define var(eq)			 	(eq)->data.value.var_ind
 #define op(eq)			 	(eq)->data.value.op
 
-struct Node *eq_differentiate(struct Node *equation, char diff_var_name,
-							  enum EquationError *err)
+enum EquationError eq_ctor(struct Equation *eq)
+{
+	eq->var_names = (char**) calloc(EQ_INIT_VARS_CAPACITY, sizeof(char*));
+	if (!eq->var_names)
+		return EQ_NO_MEM_ERR;
+	eq->num_vars = 0;
+	eq->cap_vars = EQ_INIT_VARS_CAPACITY;
+	eq->tree = NULL;
+	return EQ_NO_ERR;
+}
+
+void eq_dtor(struct Equation *eq)
+{
+	node_op_delete(eq->tree);
+	eq->tree = NULL;
+	free(eq->var_names);
+	eq->var_names = NULL;
+	eq->cap_vars = (size_t) -1;
+	eq->num_vars = (size_t) -1;
+}
+
+enum EquationError eq_differentiate(struct Equation eq, size_t diff_var_ind,
+									struct Equation *diff)
+{
+	assert(diff);
+
+	char **tmp = (char**) realloc(diff->var_names, eq.cap_vars * sizeof(char*));
+	if (!tmp)
+		return EQ_NO_MEM_ERR;
+	diff->var_names = tmp;
+	memcpy(diff->var_names, eq.var_names, eq.cap_vars * sizeof(char*));
+	diff->num_vars = eq.num_vars;
+
+	enum EquationError err = EQ_NO_ERR;
+	diff->tree = subeq_differentiate(eq.tree, diff_var_ind, &err);
+
+	return err;
+}
+
+static struct Node *subeq_differentiate(const struct Node *equation, 
+										size_t diff_var_ind,
+										enum EquationError *err)
 {
 	switch (type(equation)) {
 		case MATH_NUM:
 			return new_num(0);
 		case MATH_VAR:
-			if (var(equation) == diff_var_name)
+			if (var(equation) == diff_var_ind)
 				return new_num(1);
 			else
-				return new_var(var(equation));
+				return new_num(0);
 		case MATH_OP:
-			return (*MATH_OP_DEFS[op(equation)].diff)(equation, diff_var_name,
+			return (*MATH_OP_DEFS[op(equation)].diff)(equation, diff_var_ind,
 													  err);
 		default:
 			*err = EQ_UNKNOWN_OP_ERR;
@@ -50,29 +98,104 @@ struct Node *eq_differentiate(struct Node *equation, char diff_var_name,
 	}
 }
 
-enum EquationError eq_simplify(struct Node *equation)
+enum EquationError eq_simplify(struct Equation *eq)
 {
-	assert(equation);
+	return subeq_simplify(eq->tree);
+}
+
+static enum EquationError subeq_simplify(struct Node *equation)
+{
+	if (!equation)
+		return EQ_NO_ERR;
 
 	if (type(equation) == MATH_NUM || type(equation) == MATH_VAR)
 		return EQ_NO_ERR;
 
-	eq_simplify(equation->left);
-	eq_simplify(equation->right);
-
 	enum EquationError err = EQ_NO_ERR;
 
-	if (type(equation) == MATH_OP && type(eq_left) == MATH_NUM &&
+	err = subeq_simplify(equation->left);
+	if (err < 0)
+		return err;
+	err = subeq_simplify(equation->right);
+	if (err < 0)
+		return err;
+
+	if (type(equation) == MATH_OP && !eq_left &&
 		type(eq_right) == MATH_NUM) {
-		double eval_res = (*MATH_OP_DEFS[op(equation)].eval)(equation, &err);
+		double eval_res = (*MATH_OP_DEFS[op(equation)].eval)(NAN,
+															 num(eq_right),
+															 &err);
 		if (err < 0)
 			return err;
 		to_num(equation, eval_res);
 		return EQ_NO_ERR;
-	} else if (type(equation) == MATH_OP) {
+	}
+	if (type(equation) == MATH_OP && !eq_right &&
+		type(eq_left) == MATH_NUM) {
+		double eval_res = (*MATH_OP_DEFS[op(equation)].eval)(num(eq_left),
+															 NAN,
+															 &err);
+		if (err < 0)
+			return err;
+		to_num(equation, eval_res);
+		return EQ_NO_ERR;
+	}
+	if (eq_left && eq_right && type(equation) == MATH_OP &&
+		type(eq_left) == MATH_NUM && type(eq_right) == MATH_NUM) {
+		double eval_res = (*MATH_OP_DEFS[op(equation)].eval)(num(eq_left),
+															 num(eq_right),
+															 &err);
+		if (err < 0)
+			return err;
+		to_num(equation, eval_res);
+		return EQ_NO_ERR;
+	}
+	if (type(equation) == MATH_OP) {
 		return (*MATH_OP_DEFS[op(equation)].simplify)(equation);
 	}
 
+	return EQ_NO_ERR;
+}
+
+enum EquationError eq_evaluate(struct Equation equation, double *vals,
+							   double *res)
+{
+	return subeq_evaluate(equation.tree, vals, res);
+}
+
+static enum EquationError subeq_evaluate(struct Node *subeq, double *vals,
+										 double *res)
+{
+	assert(vals);
+	assert(res);
+
+	if (!subeq) {
+		*res = NAN;
+		return EQ_NO_ERR;
+	}
+
+	if (type(subeq) == MATH_NUM) {
+		*res = num(subeq);
+		return EQ_NO_ERR;
+	}
+	if (type(subeq) == MATH_VAR) {
+		*res = vals[var(subeq)];
+		return EQ_NO_ERR;
+	}
+
+	double left = NAN;
+	double right = NAN;
+	enum EquationError err = EQ_NO_ERR;
+
+	err = subeq_evaluate(subeq->left, vals, &left);
+	if (err < 0)
+		return err;
+	err = subeq_evaluate(subeq->right, vals, &right);
+	if (err < 0)
+		return err;
+	*res = (*MATH_OP_DEFS[op(subeq)].eval)(left, right, &err);
+	if (err < 0)
+		return err;
 	return EQ_NO_ERR;
 }
 
@@ -105,9 +228,6 @@ static struct Node *eq_new_operator(enum MathOp op, struct Node *left,
 									struct Node *right, enum EquationError *err)
 {
 	assert(err);
-
-	if (!left || !right)
-		return NULL;
 
 	struct MathToken data = {};
 	data.type = MATH_OP;
@@ -157,30 +277,6 @@ static struct Node *eq_new_number(double num, enum EquationError *err)
 	return new_node;
 }
 
-static struct Node *eq_new_variable(char varname, enum EquationError *err)
-{
-	assert(err);
-
-	struct MathToken data = {};
-	data.type = MATH_VAR;
-	data.value.varname = varname;
-	struct Node *new_node = NULL;
-	enum TreeError tr_err = node_op_new(&new_node, data);
-
-	if (tr_err == TREE_NO_MEM_ERR) {
-		*err = EQ_NO_MEM_ERR;
-		return NULL;
-	} else if (tr_err < 0) {
-		*err = EQ_TREE_ERR;
-		return NULL;
-	}
-
-	new_node->left = NULL;
-	new_node->right = NULL;
-
-	return new_node;
-}
-
 static void eq_change_to_num(struct Node *equation, double num)
 {
 	assert(equation);
@@ -189,8 +285,8 @@ static void eq_change_to_num(struct Node *equation, double num)
 	num(equation) = num;
 	node_op_delete(eq_left);
 	node_op_delete(eq_right);
-	eq_left = NULL;
-	eq_right = NULL;
+	equation->left = NULL;
+	equation->right = NULL;
 }
 
 static void eq_change_to_op(struct Node *equation, enum MathOp op,
@@ -239,7 +335,7 @@ static bool is_equal(double a, double b)
 	return abs(a - b) < EQ_EPSILON;
 }
 
-struct Node *math_diff_add(struct Node *equation, char var,
+struct Node *math_diff_add(const struct Node *equation, size_t var,
 						   enum EquationError *err)
 {
 	assert(equation);
@@ -250,16 +346,9 @@ struct Node *math_diff_add(struct Node *equation, char var,
 	return new_op(MATH_ADD, diff(eq_left), diff(eq_right));
 }
 									 	
-double math_eval_add(struct Node *equation, enum EquationError *err)
+double math_eval_add(double l, double r, enum EquationError */*err*/)
 {
-	assert(equation);
-	assert(err);
-	assert(type(equation) == MATH_OP);
-	assert(op(equation) == MATH_ADD);
-	assert(type(eq_left) == MATH_NUM);
-	assert(type(eq_right) == MATH_NUM);
-
-	return num(eq_left) + num(eq_right);
+	return l + r;
 }
 
 enum EquationError math_simplify_add(struct Node *equation)
@@ -283,7 +372,7 @@ enum EquationError math_simplify_add(struct Node *equation)
 	return eq_err;
 }
 
-struct Node *math_diff_sub(struct Node *equation, char var,
+struct Node *math_diff_sub(const struct Node *equation, size_t var,
 						   enum EquationError *err)
 {
 	assert(equation);
@@ -294,16 +383,9 @@ struct Node *math_diff_sub(struct Node *equation, char var,
 	return new_op(MATH_SUB, diff(eq_left), diff(eq_right));
 }
 
-double math_eval_sub(struct Node *equation, enum EquationError *err)
+double math_eval_sub(double l, double r, enum EquationError */*err*/)
 {
-	assert(equation);
-	assert(err);
-	assert(type(equation) == MATH_OP);
-	assert(op(equation) == MATH_SUB);
-	assert(type(eq_left) == MATH_NUM);
-	assert(type(eq_right) == MATH_NUM);
-
-	return num(eq_left) - num(eq_right);
+	return l - r;
 }
 
 enum EquationError math_simplify_sub(struct Node *equation)
@@ -325,7 +407,7 @@ enum EquationError math_simplify_sub(struct Node *equation)
 	return eq_err;
 }
 
-struct Node *math_diff_mult(struct Node *equation, char var,
+struct Node *math_diff_mult(const struct Node *equation, size_t var,
 							enum EquationError *err)
 {
 	assert(equation);
@@ -338,16 +420,9 @@ struct Node *math_diff_mult(struct Node *equation, char var,
 				  new_op(MATH_MULT, copy(eq_left), diff(eq_right)));
 }
 
-double math_eval_mult(struct Node *equation, enum EquationError *err)
+double math_eval_mult(double l, double r, enum EquationError */*err*/)
 {
-	assert(equation);
-	assert(err);
-	assert(type(equation) == MATH_OP);
-	assert(op(equation) == MATH_MULT);
-	assert(type(eq_left) == MATH_NUM);
-	assert(type(eq_right) == MATH_NUM);
-
-	return num(eq_left) * num(eq_right);
+	return l * r;
 }
 
 enum EquationError math_simplify_mult(struct Node *equation)
@@ -369,7 +444,7 @@ enum EquationError math_simplify_mult(struct Node *equation)
 	return EQ_NO_ERR;
 }
 
-struct Node *math_diff_div(struct Node *equation, char var,
+struct Node *math_diff_div(const struct Node *equation, size_t var,
 						   enum EquationError *err)
 {
 	assert(equation);
@@ -384,21 +459,16 @@ struct Node *math_diff_div(struct Node *equation, char var,
 				  new_op(MATH_MULT, copy(eq_right), copy(eq_right)));
 }
 
-double math_eval_div(struct Node *equation, enum EquationError *err)
+double math_eval_div(double l, double r, enum EquationError *err)
 {
-	assert(equation);
 	assert(err);
-	assert(type(equation) == MATH_OP);
-	assert(op(equation) == MATH_DIV);
-	assert(type(eq_left) == MATH_NUM);
-	assert(type(eq_right) == MATH_NUM);
 
-	if (is_equal(num(eq_right), 0)) {
+	if (is_equal(r, 0)) {
 		*err = EQ_ZERO_DIV_ERR;
 		return NAN;
 	}
 
-	return num(eq_left) / num(eq_right);
+	return l / r;
 }
 
 enum EquationError math_simplify_div(struct Node *equation)
@@ -417,5 +487,216 @@ enum EquationError math_simplify_div(struct Node *equation)
 			   var(eq_left) == var(eq_right)) {
 		to_num(equation, 1);
 	}
+	return EQ_NO_ERR;
+}
+
+struct Node *math_diff_pow(const struct Node *equation, size_t var,
+						   enum EquationError *err)
+{
+	assert(equation);
+	assert(err);
+	assert(type(equation) == MATH_OP);
+	assert(op(equation) == MATH_POW);
+
+	if (type(eq_right) == MATH_NUM) {
+		return new_op(MATH_MULT, new_op(MATH_MULT, copy(eq_right),
+					  new_op(MATH_POW, copy(eq_left),
+					  		 new_op(MATH_SUB, copy(eq_right), new_num(1)))),
+					  diff(eq_left));
+	}
+	//TODO: copy(equation) instead of copy(eq_left) ^ copy(eq_right)
+	if (type(eq_left) == MATH_NUM) {
+		return new_op(MATH_MULT, new_op(MATH_MULT,
+					  new_op(MATH_POW, copy(eq_left), copy(eq_right)),
+					  new_num(log(num(eq_left)))),
+					  diff(eq_right));
+	}
+
+
+	return new_op(MATH_MULT, new_op(MATH_POW, new_num(M_E),
+				  new_op(MATH_MULT,
+					     new_op(MATH_LN, NULL, copy(eq_left)),
+					     copy(eq_right))),
+				  new_op(MATH_ADD, new_op(MATH_DIV,
+				  		 new_op(MATH_MULT, diff(eq_left), copy(eq_right)), 
+				  		 copy(eq_left)),
+				  		 new_op(MATH_MULT, new_op(MATH_LN, NULL, copy(eq_left)), diff(eq_right))));
+}
+
+double math_eval_pow(double l, double r, enum EquationError */*err*/)
+{
+	return pow(l, r);
+}
+
+enum EquationError math_simplify_pow(struct Node *equation)
+{
+	assert(equation);
+	assert(type(equation) == MATH_OP);
+	assert(op(equation) == MATH_POW);
+
+	if (type(eq_right) == MATH_NUM && is_equal(num(eq_right), 1)) {
+		eq_lift_up_left(equation);
+	} else if (type(eq_left) == MATH_NUM && (is_equal(num(eq_left), 1) ||
+			 is_equal(num(eq_left), 0))) {
+		to_num(equation, num(eq_left));
+	}
+
+	return EQ_NO_ERR;
+}
+
+struct Node *math_diff_ln(const struct Node *equation, size_t var,
+						  enum EquationError *err)
+{
+	assert(equation);
+	assert(err);
+	assert(type(equation) == MATH_OP);
+	assert(op(equation) == MATH_LN);
+
+	return new_op(MATH_MULT,
+				  new_op(MATH_DIV, new_num(1), copy(eq_right)),
+				  diff(eq_right));
+}
+
+double math_eval_ln(double l, double r, enum EquationError *err)
+{
+	assert(isnan(l));
+	assert(err);
+
+	if (r <= 0) {
+		*err = EQ_LN_NEGATIVE_ARG_ERR;
+		return NAN;
+	}
+
+	return 0;
+}
+
+enum EquationError math_simplify_ln (struct Node */*equation*/)
+{
+	return EQ_NO_ERR;
+}
+
+struct Node *math_diff_cos(const struct Node *equation, size_t var,
+						   enum EquationError *err)
+{
+	assert(equation);
+	assert(err);
+	assert(type(equation) == MATH_OP);
+	assert(op(equation) == MATH_COS);
+
+	return new_op(MATH_MULT, new_op(MATH_MULT, new_num(-1), 
+				  new_op(MATH_SIN, NULL, copy(eq_right))),
+				  diff(eq_right));
+}
+
+double math_eval_cos(double l, double r, enum EquationError */*err*/)
+{
+	assert(isnan(l));
+
+	return cos(r);
+}
+	
+enum EquationError math_simplify_cos(struct Node */*equation*/)
+{
+	return EQ_NO_ERR;
+}
+
+struct Node *math_diff_sin(const struct Node *equation, size_t var,
+						   enum EquationError *err)
+{
+	assert(equation);
+	assert(err);
+	assert(type(equation) == MATH_OP);
+	assert(op(equation) == MATH_SIN);
+
+	return new_op(MATH_MULT, new_op(MATH_COS, NULL, copy(eq_right)),
+				  diff(eq_right));
+}
+
+double math_eval_sin(double l, double r, enum EquationError */*err*/)
+{
+	assert(isnan(l));
+
+	return sin(r);
+}
+
+enum EquationError math_simplify_sin(struct Node */*equation*/)
+{
+	return EQ_NO_ERR;
+}
+
+struct Node *math_diff_sqrt(const struct Node *equation, size_t var,
+						    enum EquationError *err)
+{
+	assert(equation);
+	assert(err);
+	assert(type(equation) == MATH_OP);
+	assert(op(equation) == MATH_SQRT);
+
+	return new_op(MATH_DIV, diff(eq_right),
+				  new_op(MATH_MULT, new_num(2), 
+				  		 new_op(MATH_SQRT, NULL, copy(eq_right))));
+}
+
+double math_eval_sqrt(double l, double r, enum EquationError */*err*/)
+{
+	assert(isnan(l));
+
+	return sqrt(r);
+}
+
+enum EquationError math_simplify_sqrt(struct Node */*equation*/)
+{
+	return EQ_NO_ERR;
+}
+
+struct Node *math_diff_tg(const struct Node *equation, size_t var,
+						    enum EquationError *err)
+{
+	assert(equation);
+	assert(err);
+	assert(type(equation) == MATH_OP);
+	assert(op(equation) == MATH_TG);
+
+	return new_op(MATH_DIV, diff(eq_right),
+				  new_op(MATH_POW,
+				  		 new_op(MATH_COS, NULL, copy(eq_right)), 
+				  		 new_num(2)));
+}
+
+double math_eval_tg(double l, double r, enum EquationError */*err*/)
+{
+	assert(isnan(l));
+
+	return tan(r);
+}
+
+enum EquationError math_simplify_tg(struct Node */*equation*/)
+{
+	return EQ_NO_ERR;
+}
+
+struct Node *math_diff_ctg(const struct Node *equation, size_t var,
+						    enum EquationError *err)
+{
+	assert(equation);
+	assert(err);
+	assert(type(equation) == MATH_OP);
+	assert(op(equation) == MATH_CTG);
+
+	return new_op(MATH_MULT, new_num(-1), 
+				  new_op(MATH_DIV, diff(eq_right), new_op(MATH_POW,
+				  		 new_op(MATH_SIN, NULL, copy(eq_right)), 
+				  		 new_num(2))));
+}
+
+double math_eval_ctg(double l, double r, enum EquationError */*err*/)
+{
+	assert(isnan(l));
+
+	return 1 / tan(r);
+}
+
+enum EquationError math_simplify_ctg(struct Node */*equation*/)
+{
 	return EQ_NO_ERR;
 }

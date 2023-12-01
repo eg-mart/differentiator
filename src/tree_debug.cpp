@@ -10,29 +10,28 @@
 
 const int ELEM_BUF_SIZE = 1024;
 
-static void _subtree_dump_log(const struct Node *node, print_func print_el,
-							  size_t level);
-static void _subtree_dump_gui(const struct Node *node, print_func print_el,
-							  FILE *dump, size_t node_id);
+static void _subtree_dump_log(const struct Node *node, struct Equation eq,
+							  print_func print_el, size_t level);
+static void _subtree_dump_gui(const struct Node *node, struct Equation eq,
+							  print_func print_el, FILE *dump, size_t node_id);
 
-void tree_dump_log(const struct Node *tr, print_func print_el,
+void tree_dump_log(struct Equation eq, print_func print_el,
 				   const char *filename, const char* funcname, int line,
 				   const char* varname)
 {
-	assert(tr);
 	assert(print_el);
 	assert(filename);
 	assert(funcname);
 	assert(varname);
 
-	log_message(DEBUG, "Dumping tree %s[%p]:\n", varname, tr);
+	log_message(DEBUG, "Dumping equation %s[tree: %p]:\n", varname, eq.tree);
 	log_message(DEBUG, "(called from %s:%d %s)\n", filename, line, funcname);
-	_subtree_dump_log(tr, print_el, 0);
-	log_message(DEBUG, "Dumping of %s[%p] ended\n", varname, tr);
+	_subtree_dump_log(eq.tree, eq, print_el, 0);
+	log_message(DEBUG, "Dumping of %s[tree: %p] ended\n", varname, eq.tree);
 }
 
-static void _subtree_dump_log(const struct Node *node, print_func print_el,
-						  size_t level)
+static void _subtree_dump_log(const struct Node *node, struct Equation eq, 
+							  print_func print_el, size_t level)
 {
 	assert(print_el);
 
@@ -52,11 +51,11 @@ static void _subtree_dump_log(const struct Node *node, print_func print_el,
 		log_string(DEBUG, "   ");
 
 	buf[0] = '\0';
-	print_el(buf, node->data, ELEM_BUF_SIZE - 1);
+	print_el(buf, node->data, eq, ELEM_BUF_SIZE - 1);
 	log_string(DEBUG, "   %s\n", buf);
 
-	_subtree_dump_log(node->left, print_el, level + 1);
-	_subtree_dump_log(node->right, print_el, level + 1);
+	_subtree_dump_log(node->left, eq, print_el, level + 1);
+	_subtree_dump_log(node->right, eq, print_el, level + 1);
 	
 	log_string(DEBUG, "   ");
 	for (size_t i = 0; i < level; i++)
@@ -93,18 +92,18 @@ void tree_end_html_dump(FILE *file)
 	fclose(file);
 }
 
-void tree_dump_gui(const struct Node *tr, print_func print_el, FILE *dump_html,
+void tree_dump_gui(struct Equation eq, print_func print_el, FILE *dump_html,
 				   const char *filename, const char *funcname, int line,
 				   const char *varname)
 {
-	assert(tr);
 	assert(print_el);
 	assert(filename);
 	assert(funcname);
 	assert(varname);
 	assert(dump_html);
 
-	log_message(DEBUG, "HTML-dumping tree %s[%p]:\n", varname, tr);
+	log_message(DEBUG, "HTML-dumping equation %s[tree %p]:\n",
+				varname, eq.tree);
 	log_message(DEBUG, "(called from %s:%d %s)\n", filename, line, funcname);
 
 	static size_t dump_count = 0;
@@ -139,7 +138,7 @@ void tree_dump_gui(const struct Node *tr, print_func print_el, FILE *dump_html,
 	"node [shape = \"rectangle\", style=\"rounded\"];\n";
 
 	fputs(BEGIN, dot_file);
-	_subtree_dump_gui(tr, print_el, dot_file, 0);
+	_subtree_dump_gui(eq.tree, eq, print_el, dot_file, 0);
 	fputs("}\n", dot_file);
 	fclose(dot_file);
 
@@ -156,26 +155,26 @@ void tree_dump_gui(const struct Node *tr, print_func print_el, FILE *dump_html,
 	system(gen_dot_cmd);
 
 	fprintf(dump_html, "<hr>\n<p style=\"font-size:30px\">"
-			"Tree %s[%p]</br>\n", varname, tr);
+			"Equation %s[tree: %p]</br>\n", varname, eq.tree);
 	fprintf(dump_html, "(called from %s:%d %s</p>\n", filename, line, funcname);
 	fprintf(dump_html, "<img src=\"%s\">\n", image_name);
 	
-	log_message(DEBUG, "HTML-dumping of %s[%p] ended\n", varname, tr);
+	log_message(DEBUG, "HTML-dumping of %s[tree %p] end\n", varname, eq.tree);
 }
 
-static void _subtree_dump_gui(const struct Node *node, print_func print_el,
-							  FILE *dump, size_t node_id)
+static void _subtree_dump_gui(const struct Node *node, struct Equation eq,
+							  print_func print_el, FILE *dump, size_t node_id)
 {
 	if (!node)
 		return;
 
 	static char buf[ELEM_BUF_SIZE] = {};
 	buf[0] = '\0';
-	print_el(buf, node->data, ELEM_BUF_SIZE - 1);
-	fprintf(dump, "node%lu [label=\"%s\"]\n", node_id, buf);
+	print_el(buf, node->data, eq, ELEM_BUF_SIZE - 1);
+	fprintf(dump, "node%lu [label=\"%s (%p)\"]\n", node_id, buf, node);
 	
-	_subtree_dump_gui(node->left, print_el, dump, 2 * node_id + 1);
-	_subtree_dump_gui(node->right, print_el, dump, 2 * node_id + 2);
+	_subtree_dump_gui(node->left, eq, print_el, dump, 2 * node_id + 1);
+	_subtree_dump_gui(node->right, eq, print_el, dump, 2 * node_id + 2);
 
 	if (node->left)
 		fprintf(dump, "node%lu -> node%lu\n", node_id, 

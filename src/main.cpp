@@ -1,5 +1,6 @@
 #include <string.h>
 #include <stdio.h>
+#include <math.h>
 
 #include "logger.h"
 #include "tree.h"
@@ -13,17 +14,25 @@ void print_math_token(char *buf, struct MathToken tok, size_t n);
 
 enum ArgError handle_input_filename(const char *arg_str, void *processed_args);
 enum ArgError handle_dump_filename(const char *arg_str, void *processed_args);
+enum ArgError handle_latex_filename(const char *arg_str, void *processed_args);
+enum ArgError handle_eval_mode(const char *arg_str, void *processed_args);
 
 struct CmdArgs {
 	const char *input_file;
 	const char *dump_file;
+	const char *latex_file;
+	bool eval_mode;
 };
 
 const ArgDef arg_defs[] = {
-	{"input", 'i', "Name of the input file with a formula",
+	{"input", 'i',  "Name of the input file with a formula",
 	 false, false, handle_input_filename},
-	{"dump", 'd', "Name of the html dump file",
+	{"dump",  'd',  "Name of the html dump file",
 	 true, false, handle_dump_filename},
+	{"latex", 'l',  "Name of the latex file the formulas will be written to",
+	 true, false, handle_latex_filename},
+	{"eval",  '\0', "Evaluate the derivative at a certain point",
+	 true, true,  handle_eval_mode},
 };
 const size_t ARG_DEFS_SIZE = sizeof(arg_defs) / sizeof(arg_defs[0]);
 
@@ -41,11 +50,14 @@ int main(int argc, const char *argv[])
 
 	struct CmdArgs args = {};
 	struct Buffer buf = {};
-	struct Node *tr = NULL;
-	struct Node *diff = NULL;
+	struct Equation eq = {};
+	struct Equation diff = {};
+
+	double *vals = NULL;
+	double res = NAN;
 
 	FILE *dump = NULL;
-	FILE *latex = fopen("main.tex", "w");
+	FILE *latex = NULL;
 
 	arg_err = process_args(arg_defs, ARG_DEFS_SIZE, argv, argc, &args);
 	if (arg_err < 0) {
@@ -67,36 +79,81 @@ int main(int argc, const char *argv[])
 
 	buf_err = buffer_ctor(&buf);
 	if (buf_err < 0) {
+		log_message(ERROR, "A buffer error happened\n");
 		goto error;
 	}
 	buf_err = buffer_load_from_file(&buf, args.input_file);
 	if (buf_err < 0) {
+		log_message(ERROR, "A buffer error happened\n");
 		goto error;
 	}
 
-	eqio_err = eq_load_from_buf(&tr, &buf);
+	eq_err = eq_ctor(&eq);
+	if (eq_err < 0) {
+		log_message(ERROR, "An equation error happened\n");
+		goto error;
+	}
+	eq_ctor(&diff);
+	if (eq_err < 0) {
+		log_message(ERROR, "An equation error happened\n");
+		goto error;
+	}
+
+	eqio_err = eq_load_from_buf(&eq, &buf);
 	if (eqio_err < 0) {
 		log_message(ERROR, eq_io_err_to_str(eqio_err));
 		goto error;
 	}
 
-	TREE_DUMP_GUI(tr, eq_print_token, dump);
-	eq_print(tr, stdout);
-	diff = eq_differentiate(tr, 'x', &eq_err);
-	TREE_DUMP_GUI(diff, eq_print_token, dump);
-	eq_err = eq_simplify(diff);
-	eq_err = eq_simplify(tr);
-	TREE_DUMP_GUI(diff, eq_print_token, dump);
-	//eq_err = eq_simplify(&diff);
-	//TREE_DUMP_GUI(diff, eq_print_token, dump);
-	eq_print(tr, stdout);
-	eq_print(diff, stdout);
+	if (args.latex_file) {
+		latex = fopen(args.latex_file, "w");
+		if (!latex) {
+			log_message(ERROR, "Unable to open file %s", args.latex_file);
+			goto error;
+		}
+		eq_start_latex_print(latex);
+	}
 
-	eq_start_latex_print(latex);
-	eq_print_latex(tr, latex);
-	eq_print_latex(diff, latex);
-	eq_end_latex_print(latex);
-	eq_gen_latex_pdf("main.tex");
+	TREE_DUMP_GUI(eq, eq_print_token, dump);
+	eq_print(eq, stdout);
+	if (latex)
+		eq_print_latex(eq, latex);
+
+	eq_err = eq_differentiate(eq, 0, &diff);
+	if (eq_err < 0) {
+		log_message(ERROR, "An error happened while differentiating\n");
+		goto error;
+	}
+	TREE_DUMP_GUI(diff, eq_print_token, dump);
+	if (latex)
+		eq_print_latex(diff, latex);
+
+	eq_err = eq_simplify(&diff);
+	if (eq_err < 0) {
+		log_message(ERROR, "An error happened while simplifying\n");
+		goto error;
+	}
+	eq_print(diff, stdout);
+	TREE_DUMP_GUI(diff, eq_print_token, dump);
+	if (latex)
+		eq_print_latex(diff, latex);
+
+	if (args.eval_mode) {
+		eq_read_var_values_cli(diff, &vals);
+		eq_err = eq_evaluate(diff, vals, &res);
+		if (eq_err < 0) {
+			log_message(ERROR, "An error happened while evaluating\n");
+			goto error;
+		}
+		printf("Значение производной:\n%lf\n", res);
+	}
+
+	if (latex) {
+		eq_end_latex_print(latex);
+		fclose(latex);
+		eq_gen_latex_pdf(args.latex_file);
+		latex = NULL;
+	}
 
 	goto finally;
 
@@ -105,10 +162,13 @@ int main(int argc, const char *argv[])
 		goto finally;
 
 	finally:
-		buffer_dtor(&buf);
-		node_op_delete(tr);
-		node_op_delete(diff);
 		tree_end_html_dump(dump);
+		free(vals);
+		eq_dtor(&eq);
+		eq_dtor(&diff);
+		buffer_dtor(&buf);
+		if (latex)
+			fclose(latex);
 		logger_dtor();
 		return ret_val;
 
@@ -125,5 +185,19 @@ enum ArgError handle_dump_filename(const char *arg_str, void *processed_args)
 {
 	struct CmdArgs *args = (struct CmdArgs*) processed_args;
 	args->dump_file = arg_str;
+	return ARG_NO_ERR;
+}
+
+enum ArgError handle_latex_filename(const char *arg_str, void *processed_args)
+{
+	struct CmdArgs *args = (struct CmdArgs*) processed_args;
+	args->latex_file = arg_str;
+	return ARG_NO_ERR;
+}
+
+enum ArgError handle_eval_mode(const char */*arg_str*/, void *processed_args)
+{
+	struct CmdArgs *args = (struct CmdArgs*) processed_args;
+	args->eval_mode = true;
 	return ARG_NO_ERR;
 }

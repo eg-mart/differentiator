@@ -42,8 +42,14 @@ enum BufferError buffer_load_from_file(struct Buffer *buf, const char *filename)
 	if (read_chars < buf->size - 1)
 		return BUF_FILE_READ_ERR;
 	buffer_reset(buf);
+	buf->data[buf->size - 1] = '\0';
 
 	return BUF_NO_ERR;
+}
+
+size_t buffer_size(struct Buffer *buf)
+{
+	return (size_t) (buf->pos - buf->data);
 }
 
 void buffer_reset(struct Buffer *buf)

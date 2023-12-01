@@ -6,6 +6,13 @@ enum MathOp {
 	MATH_MULT,
 	MATH_SUB,
 	MATH_DIV,
+	MATH_POW,
+	MATH_LN,
+	MATH_SQRT,
+	MATH_COS,
+	MATH_SIN,
+	MATH_TG,
+	MATH_CTG,
 };
 
 enum MathTokenType {
@@ -17,7 +24,7 @@ enum MathTokenType {
 union MathTokenValue {
 	double num;
 	enum MathOp op;
-	char varname;
+	size_t var_ind;
 };
 
 struct MathToken {
