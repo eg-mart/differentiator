@@ -13,6 +13,10 @@ enum MathOp {
 	MATH_SIN,
 	MATH_TG,
 	MATH_CTG,
+	MATH_ARCSIN,
+	MATH_ARCCOS,
+	MATH_ARCTG,
+	MATH_ARCCTG,
 };
 
 enum MathTokenType {

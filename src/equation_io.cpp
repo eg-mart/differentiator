@@ -374,27 +374,42 @@ static void subeq_print_latex(const struct Node *subeq, struct Equation eq,
 					break;
 				case MATH_COS:
 					fprintf(out, "\\cos(");
-					subeq_print_latex(subeq->right, eq, out, put_right_bracks);
+					subeq_print_latex(subeq->right, eq, out, false);
 					fprintf(out, ")");
 					break;
 				case MATH_SIN:
 					fprintf(out, "\\sin(");
-					subeq_print_latex(subeq->right, eq, out, put_right_bracks);
+					subeq_print_latex(subeq->right, eq, out, false);
 					fprintf(out, ")");
 					break;
 				case MATH_SQRT:
 					fprintf(out, "\\sqrt{");
-					subeq_print_latex(subeq->right, eq, out, put_right_bracks);
+					subeq_print_latex(subeq->right, eq, out, false);
 					fprintf(out, "}");
 					break;
 				case MATH_TG:
 					fprintf(out, "\\tg(");
-					subeq_print_latex(subeq->right, eq, out, put_right_bracks);
+					subeq_print_latex(subeq->right, eq, out, false);
 					fprintf(out, ")");
 					break;
 				case MATH_CTG:
 					fprintf(out, "\\cot(");
-					subeq_print_latex(subeq->right, eq, out, put_right_bracks);
+					subeq_print_latex(subeq->right, eq, out, false);
+					fprintf(out, ")");
+					break;
+				case MATH_ARCSIN:
+					fprintf(out, "\\arcsin(");
+					subeq_print_latex(subeq->right, eq, out, false);
+					fprintf(out, ")");
+					break;
+				case MATH_ARCCOS:
+					fprintf(out, "\\arccos(");
+					subeq_print_latex(subeq->right, eq, out, false);
+					fprintf(out, ")");
+					break;
+				case MATH_ARCTG:
+					fprintf(out, "\\arctg(");
+					subeq_print_latex(subeq->right, eq, out, false);
 					fprintf(out, ")");
 					break;
 				case MATH_ADD:

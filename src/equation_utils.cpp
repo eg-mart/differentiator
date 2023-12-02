@@ -797,3 +797,89 @@ enum EquationError math_simplify_ctg(struct Node */*equation*/)
 {
 	return EQ_NO_ERR;
 }
+
+struct Node *math_diff_arcsin(const struct Node *equation, size_t var,
+							  enum EquationError *err)
+{
+	assert(equation);
+	assert(err);
+	assert(type(equation) == MATH_OP);
+	assert(op(equation) == MATH_ARCSIN);
+
+	return new_op(MATH_DIV, diff(eq_right), new_op(MATH_SQRT, NULL,
+				  new_op(MATH_SUB, new_num(1), new_op(MATH_POW,
+				  		 copy(eq_right), new_num(2)))));
+}
+
+double math_eval_arcsin(double l, double r, enum EquationError *err)
+{
+	assert(isnan(l));
+
+	if (abs(r) > 1) {
+		*err = EQ_WRONG_ARCSIN_ARG_ERR;
+		return NAN;
+	}
+
+	return asin(r);
+}
+
+enum EquationError math_simplify_arcsin(struct Node */*equation*/)
+{
+	return EQ_NO_ERR;
+}
+
+struct Node *math_diff_arccos(const struct Node *equation, size_t var,
+						    enum EquationError *err)
+{
+	assert(equation);
+	assert(err);
+	assert(type(equation) == MATH_OP);
+	assert(op(equation) == MATH_ARCCOS);
+
+	return new_op(MATH_MULT, new_num(-1),
+				  new_op(MATH_DIV, diff(eq_right), new_op(MATH_SQRT, NULL,
+				  new_op(MATH_SUB, new_num(1), new_op(MATH_POW,
+				  		 copy(eq_right), new_num(2))))));
+}
+
+double math_eval_arccos(double l, double r, enum EquationError *err)
+{
+	assert(isnan(l));
+	
+	if (abs(r) > 1) {
+		*err = EQ_WRONG_ARCCOS_ARG_ERR;
+		return NAN;
+	}
+
+	return acos(r);
+}
+
+enum EquationError math_simplify_arccos(struct Node */*equation*/)
+{
+	return EQ_NO_ERR;
+}
+
+
+struct Node *math_diff_arctg(const struct Node *equation, size_t var,
+						    enum EquationError *err)
+{
+	assert(equation);
+	assert(err);
+	assert(type(equation) == MATH_OP);
+	assert(op(equation) == MATH_ARCTG);
+
+	return new_op(MATH_DIV, diff(eq_right), new_op(MATH_ADD, new_num(1), 
+				  new_op(MATH_POW, copy(eq_right), new_num(2))));
+}
+
+double math_eval_arctg(double l, double r, enum EquationError */*err*/)
+{
+	assert(isnan(l));
+	
+	return atan(r);
+}
+
+enum EquationError math_simplify_arctg(struct Node */*equation*/)
+{
+	return EQ_NO_ERR;
+}

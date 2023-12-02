@@ -4,6 +4,8 @@
 #include "tree.h"
 
 enum EquationError {
+	EQ_WRONG_ARCCOS_ARG_ERR	= -8,
+	EQ_WRONG_ARCSIN_ARG_ERR	= -7,
 	EQ_LN_NEGATIVE_ARG_ERR	= -6,
 	EQ_NO_VALUES_ERR		= -5,
 	EQ_UNKNOWN_OP_ERR		= -4,
@@ -85,6 +87,24 @@ double			   math_eval_ctg    (double l, double r,
 									 enum EquationError *err);
 enum EquationError math_simplify_ctg(struct Node *equation);
 
+struct Node		  *math_diff_arcsin    (const struct Node *equation, size_t var,
+									 	enum EquationError *err);
+double			   math_eval_arcsin    (double l, double r,
+									 	enum EquationError *err);
+enum EquationError math_simplify_arcsin(struct Node *equation);
+
+struct Node		  *math_diff_arccos    (const struct Node *equation, size_t var,
+										enum EquationError *err);
+double			   math_eval_arccos    (double l, double r,
+									 	enum EquationError *err);
+enum EquationError math_simplify_arccos(struct Node *equation);
+
+struct Node		  *math_diff_arctg     (const struct Node *equation, size_t var,
+									 	enum EquationError *err);
+double			   math_eval_arctg    (double l, double r,
+									 	enum EquationError *err);
+enum EquationError math_simplify_arctg(struct Node *equation);
+
 struct MathOpDefinition {
 	const char  *name;
 	int priority;
@@ -93,18 +113,22 @@ struct MathOpDefinition {
 	op_simplify simplify;
 };
 	
-const struct MathOpDefinition MATH_OP_DEFS[] = {
-	{ "+",    3, math_diff_add,  math_eval_add,  math_simplify_add  },
-	{ "*",    2, math_diff_mult, math_eval_mult, math_simplify_mult },
-	{ "-",    3, math_diff_sub,  math_eval_sub,  math_simplify_sub  },
-	{ "/",    2, math_diff_div,  math_eval_div,  math_simplify_div  },
-	{ "^",	  1, math_diff_pow,  math_eval_pow,  math_simplify_pow  },
-	{ "ln",   1, math_diff_ln,   math_eval_ln,   math_simplify_ln   },
-	{ "sqrt", 2, math_diff_sqrt, math_eval_sqrt, math_simplify_sqrt },
-	{ "cos",  1, math_diff_cos,  math_eval_cos,  math_simplify_cos  },
-	{ "sin",  1, math_diff_sin,  math_eval_sin,  math_simplify_sin  },
-	{ "tg",   1, math_diff_tg,   math_eval_tg,   math_simplify_tg   },
-	{ "ctg",  1, math_diff_ctg,  math_eval_ctg,  math_simplify_ctg  },
+const struct MathOpDefinition MATH_OP_DEFS[] = { 
+	{ "+",      3, math_diff_add,    math_eval_add,      math_simplify_add    },
+	{ "*",      2, math_diff_mult,   math_eval_mult,     math_simplify_mult   },
+	{ "-",      3, math_diff_sub,    math_eval_sub,      math_simplify_sub    },
+	{ "/",      2, math_diff_div,    math_eval_div,      math_simplify_div    },
+	{ "^",	    1, math_diff_pow,    math_eval_pow,      math_simplify_pow    },
+	{ "ln",     1, math_diff_ln,     math_eval_ln,       math_simplify_ln     },
+	{ "sqrt",   2, math_diff_sqrt,   math_eval_sqrt,     math_simplify_sqrt   },
+	{ "cos",    1, math_diff_cos,    math_eval_cos,      math_simplify_cos    },
+	{ "sin",    1, math_diff_sin,    math_eval_sin,      math_simplify_sin    },
+	{ "tg",     1, math_diff_tg,     math_eval_tg,       math_simplify_tg     },
+	{ "ctg",    1, math_diff_ctg,    math_eval_ctg,      math_simplify_ctg    },
+	{ "arcsin", 1, math_diff_arcsin, math_eval_arcsin,   math_simplify_arcsin },
+	{ "arccos", 1, math_diff_arccos, math_eval_arccos,   math_simplify_arccos },
+	{ "arctg", 	1, math_diff_arctg,  math_eval_arctg,    math_simplify_arctg  },
+	//{ "arcctg", 1, math_diff_arcsin, math_eval_arcsin,   math_simplify_arcsin },
 };
 const size_t MATH_OP_DEFS_SIZE = sizeof(MATH_OP_DEFS) / 
 								 sizeof(MATH_OP_DEFS[0]);

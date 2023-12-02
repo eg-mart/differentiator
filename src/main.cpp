@@ -35,7 +35,7 @@ const ArgDef arg_defs[] = {
 	 true, false, handle_latex_filename},
 	{"eval",  '\0', "Evaluate the derivative at a certain point",
 	 true, true,  handle_eval_mode},
-	{"teylor",'\0', "Set extent to which equation will be expanded into"
+	{"taylor",'\0', "Set extent to which equation will be expanded into"
 	 " Teylor's series (3 by default)", true, false, handle_teylor_extent},
 };
 const size_t ARG_DEFS_SIZE = sizeof(arg_defs) / sizeof(arg_defs[0]);
