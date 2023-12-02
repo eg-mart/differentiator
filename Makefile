@@ -17,6 +17,8 @@ CFLAGS = -D _DEBUG -ggdb3 -std=c++17 -O0 -Wall -Wextra -Weffc++\
 CC = g++
 
 .PHONY : clean
+.PHONY : all
+.PHONY : $(SUBMODS)
 
 EXE = differentiator
 SRCDIR = src
@@ -32,10 +34,9 @@ all : $(EXE)
 $(EXE) : $(OBJS) $(SUBMODS)
 	@$(CC) $(CFLAGS) -o $(EXE) $(wildcard $(addsuffix /$(OBJDIR)/*.o, $(SUBMODS))) $(OBJS)
 
-$(OBJS): $(OBJDIR)/%.o: $(SRCDIR)/%.cpp | $(OBJDIR)
+$(OBJDIR)/%.o: $(SRCDIR)/%.cpp | $(OBJDIR)
 	@$(CC) $(CFLAGS) -c $< -o $@
 
-.PHONY : $(SUBMODS)
 $(SUBMODS) :
 	$(MAKE) -C $@
 
@@ -43,4 +44,4 @@ $(OBJDIR):
 	mkdir -p $(OBJDIR)
 
 clean :
-	rm $(EXE) $(OBJS) dump/*
+	rm $(EXE) $(OBJS) dump/* *.tex *.aux *.log
