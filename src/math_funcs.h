@@ -105,6 +105,12 @@ double			   math_eval_arctg    (double l, double r,
 									 	enum EquationError *err);
 enum EquationError math_simplify_arctg(struct Node *equation);
 
+struct Node		  *math_diff_arcctg     (const struct Node *equation, size_t var,
+									 	enum EquationError *err);
+double			   math_eval_arcctg    (double l, double r,
+									 	enum EquationError *err);
+enum EquationError math_simplify_arcctg(struct Node *equation);
+
 struct MathOpDefinition {
 	const char  *name;
 	int priority;
@@ -128,7 +134,7 @@ const struct MathOpDefinition MATH_OP_DEFS[] = {
 	{ "arcsin", 1, math_diff_arcsin, math_eval_arcsin,   math_simplify_arcsin },
 	{ "arccos", 1, math_diff_arccos, math_eval_arccos,   math_simplify_arccos },
 	{ "arctg", 	1, math_diff_arctg,  math_eval_arctg,    math_simplify_arctg  },
-	//{ "arcctg", 1, math_diff_arcsin, math_eval_arcsin,   math_simplify_arcsin },
+	{ "arcctg", 1, math_diff_arcctg, math_eval_arcctg,   math_simplify_arcctg },
 };
 const size_t MATH_OP_DEFS_SIZE = sizeof(MATH_OP_DEFS) / 
 								 sizeof(MATH_OP_DEFS[0]);

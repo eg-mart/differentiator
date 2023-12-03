@@ -412,6 +412,11 @@ static void subeq_print_latex(const struct Node *subeq, struct Equation eq,
 					subeq_print_latex(subeq->right, eq, out, false);
 					fprintf(out, ")");
 					break;
+				case MATH_ARCCTG:
+					fprintf(out, "\\arcctg(");
+					subeq_print_latex(subeq->right, eq, out, false);
+					fprintf(out, ")");
+					break;
 				case MATH_ADD:
 				case MATH_SUB:
 				default:
