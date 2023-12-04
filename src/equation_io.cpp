@@ -7,20 +7,25 @@
 #include "equation_io.h"
 #include "logger.h"
 #include "equation_utils.h"
+#include "equation_dsl.h"
 
-static char *skip_space(char *str);
-static size_t get_word_len(const char *str);
 static void clear_stdin();
 
-static enum EquationIOError eq_read_op(struct MathToken *tok,
-									   struct Buffer *buf);
-static enum EquationIOError eq_read_num(struct MathToken *tok,
+static void get_space(struct Buffer *buf);
+static enum EquationIOError get_add(struct Node **subeq, struct Equation *eq,
+									struct Buffer *buf);
+static enum EquationIOError get_mult(struct Node **subeq, struct Equation *eq,
+									 struct Buffer *buf);
+static enum EquationIOError get_pow(struct Node **subeq, struct Equation *eq,
+									struct Buffer *buf);
+static enum EquationIOError get_prim(struct Node **subeq, struct Equation *eq,
 										struct Buffer *buf);
-static enum EquationIOError eq_read_var(struct MathToken *tok,
-										struct Equation *eq, struct Buffer *buf);
-
-static enum EquationIOError subeq_load(struct Node **subeq, struct Equation *eq,
-									   struct Buffer *buf);
+static enum EquationIOError get_func(struct Node **subeq, struct Equation *eq,
+									 struct Buffer *buf);
+static enum EquationIOError get_num(struct Node **subeq, struct Equation *eq,
+									struct Buffer *buf);
+static enum EquationIOError get_var(struct Node **subeq, struct Equation *eq,
+									  struct Buffer *buf);
 
 static void subeq_print(const struct Node *subeq, struct Equation eq, FILE *out);
 static void subeq_print_latex(const struct Node *subeq, struct Equation eq,
@@ -32,173 +37,269 @@ enum EquationIOError eq_load_from_buf(struct Equation *eq, struct Buffer *buf)
 	assert(buf);
 
 	buffer_reset(buf);
-	enum EquationIOError err = subeq_load(&eq->tree, eq, buf);
-	buffer_reset(buf);
-	return err;
-}
-
-static char *skip_space(char *str)
-{
-	assert(str);
-
-	while (*str && isspace(*str))
-		str++;
-	return str;
-}
-
-static size_t get_word_len(const char *str)
-{
-	size_t len = 0;
-	if (!isalnum(str[0]) && str[0] != '_')
-		return 1;
 	
-	while (str[len] != '\0' && (isalnum(str[len]) ||
-		   str[len] == '_' || str[len] == '.' || str[len] == ','))
-		len++;
-	return len;
-}
-
-static enum EquationIOError subeq_load(struct Node **subeq, struct Equation *eq,
-									   struct Buffer *buf)
-{
-	assert(eq);
-	assert(subeq);
-	assert(buf);
-
-	static size_t OPEN_DELIM_LEN = strlen(OPEN_DELIM);
-	static size_t CLOSE_DELIM_LEN = strlen(CLOSE_DELIM);
-
-	enum EquationIOError eqio_err = EQIO_NO_ERR;
-
-	buf->pos = skip_space(buf->pos);
-	size_t word_len = get_word_len(buf->pos);
-
-	if (strncmp(buf->pos, OPEN_DELIM, word_len) == 0 &&
-		word_len == OPEN_DELIM_LEN) {
-		buf->pos = skip_space(buf->pos + word_len);
-		struct Node *left = NULL;
-		eqio_err = subeq_load(&left, eq, buf);
-		if (eqio_err < 0)
-			return eqio_err;
-		if (left && left->data.type == MATH_VAR) {
-			buf->pos[0] = '\0';
-			buf->pos++;
-		}
-
-		buf->pos = skip_space(buf->pos);
-		elem_t read = {};
-		eqio_err = eq_read_op(&read, buf);
-		if (eqio_err < 0) {
-			node_op_delete(left);
-			return eqio_err;
-		}
-
-		enum TreeError tr_err = node_op_new(subeq, read);
-		if (tr_err < 0) {
-			node_op_delete(left);
-			return EQIO_TREE_ERR;
-		}
-		(*subeq)->left = left;
-
-		eqio_err = subeq_load(&(*subeq)->right, eq, buf);
-		if (eqio_err < 0) {
-			node_op_delete(*subeq);
-			*subeq = NULL;
-			return eqio_err;
-		}
-
-		buf->pos = skip_space(buf->pos);
-		//TODO: checking for closing braces
-		word_len = get_word_len(buf->pos);
-		if (!strncmp(buf->pos, CLOSE_DELIM, word_len) == 0 ||
-			word_len != CLOSE_DELIM_LEN) {
-			node_op_delete(*subeq);
-			*subeq = NULL;
-			return EQIO_SYNTAX_ERR;
-		}
-		if ((*subeq)->right->data.type == MATH_VAR)
-			buf->pos[0] = '\0';
-		buf->pos += word_len;
-		
-		return EQIO_NO_ERR;
-	}
-
-	elem_t read = {};
-	eqio_err = eq_read_num(&read, buf);
-
-	if (eqio_err < 0)
-		eqio_err = eq_read_var(&read, eq, buf);
-
-	if (eqio_err == EQIO_SYNTAX_ERR) {
-		*subeq = NULL;
-		log_message(DEBUG, "it worked\n");
-		return EQIO_NO_ERR;
-	}
-
+	enum EquationIOError eqio_err = get_add(&eq->tree, eq, buf);
 	if (eqio_err < 0)
 		return eqio_err;
-	
-	enum TreeError tr_err = node_op_new(subeq, read);
-	if (tr_err < 0)
-		return EQIO_TREE_ERR;
-
-	(*subeq)->left = NULL;
-	(*subeq)->right = NULL;
-
-	return eqio_err;
-}
-
-static enum EquationIOError eq_read_op(struct MathToken *tok,
-									   struct Buffer *buf)
-{
-	size_t word_len = get_word_len(buf->pos);
-	for (size_t i = 0; i < MATH_OP_DEFS_SIZE; i++) {
-		//TODO: less strlen(), more execution speed
-		if (strncmp(buf->pos, MATH_OP_DEFS[i].name, word_len) == 0 &&
-			strlen(MATH_OP_DEFS[i].name) == word_len) {
-			tok->type = MATH_OP;
-			tok->value.op = (enum MathOp) i;
-			buf->pos += word_len;
-			return EQIO_NO_ERR;
-		}
-	}
-
-	return EQIO_SYNTAX_ERR;
-}
-
-static enum EquationIOError eq_read_num(struct MathToken *tok,
-										struct Buffer *buf)
-{
-	size_t word_len = get_word_len(buf->pos);
-	int read_len = 0;
-	double val = NAN;
-	int read_status = sscanf(buf->pos, "%lf%n", &val, &read_len);
-	if (read_status != 1 || word_len != (size_t) read_len)
+	if (*buf->pos)
 		return EQIO_SYNTAX_ERR;
-	tok->type = MATH_NUM;
-	tok->value.num = val;
-	buf->pos += word_len;
 	return EQIO_NO_ERR;
 }
 
-static enum EquationIOError eq_read_var(struct MathToken *tok,
-										struct Equation *eq, struct Buffer *buf)
+static void get_space(struct Buffer *buf)
 {
-	size_t word_len = get_word_len(buf->pos);
-	for (size_t i = 0; i < MATH_OP_DEFS_SIZE; i++) {
-		//TODO: less strlen(), more execution speed
-		if (strncmp(buf->pos, MATH_OP_DEFS[i].name, word_len) == 0 &&
-			strlen(MATH_OP_DEFS[i].name) == word_len) {
+	assert(buf);
+
+	while (*buf->pos && isspace(*buf->pos))
+		buf->pos++;
+}
+
+static enum EquationIOError get_add(struct Node **subeq, struct Equation *eq,
+									struct Buffer *buf)
+{
+	assert(subeq);
+	assert(eq);
+	assert(buf);
+
+	enum EquationError eq_err = EQ_NO_ERR;
+	enum EquationError *err = &eq_err;
+	enum EquationIOError eqio_err = get_mult(subeq, eq, buf);
+	if (eqio_err < 0)
+		return eqio_err;
+	get_space(buf);
+	while (*buf->pos == '+' || *buf->pos == '-') {
+		char op = *buf->pos;
+		buf->pos++;
+		get_space(buf);
+		struct Node *subeq1 = NULL;
+		eqio_err = get_mult(&subeq1, eq, buf);
+		if (eqio_err < 0) {
+			node_op_delete(subeq1);
+			return eqio_err;
+		}
+		switch (op) {
+			case '+':
+				*subeq = new_op(MATH_ADD, *subeq, subeq1);
+				break;
+			case '-':
+				*subeq = new_op(MATH_SUB, *subeq, subeq1);
+				break;
+			default:
+				return EQIO_UNKNOWN_ERR;
+		}
+		if (eq_err < 0)
+			return EQIO_EQUATION_ERR;
+		get_space(buf);
+	}
+	return EQIO_NO_ERR;
+}
+
+static enum EquationIOError get_mult(struct Node **subeq, struct Equation *eq,
+									 struct Buffer *buf)
+{
+	assert(subeq);
+	assert(eq);
+	assert(buf);
+
+	enum EquationError eq_err = EQ_NO_ERR;
+	enum EquationError *err = &eq_err;
+	enum EquationIOError eqio_err = get_pow(subeq, eq, buf);
+	if (eqio_err < 0)
+		return eqio_err;
+	get_space(buf);
+	while (*buf->pos == '*' || *buf->pos == '/') {
+		char op = *buf->pos;
+		buf->pos++;
+		get_space(buf);
+		struct Node *subeq1 = NULL;
+		eqio_err = get_pow(&subeq1, eq, buf);
+		if (eqio_err < 0) {
+			node_op_delete(subeq1);
+			return eqio_err;
+		}
+		switch (op) {
+			case '*':
+				*subeq = new_op(MATH_MULT, *subeq, subeq1);
+				break;
+			case '/':
+				*subeq = new_op(MATH_DIV, *subeq, subeq1);
+				break;
+			default:
+				return EQIO_UNKNOWN_ERR;
+		}
+		if (eq_err < 0)
+			return EQIO_EQUATION_ERR;
+		get_space(buf);
+	}
+	return EQIO_NO_ERR;
+}
+
+static enum EquationIOError get_pow(struct Node **subeq, struct Equation *eq,
+									struct Buffer *buf)
+{
+	assert(subeq);
+	assert(eq);
+	assert(buf);
+
+	enum EquationError eq_err = EQ_NO_ERR;
+	enum EquationError *err = &eq_err;
+	enum EquationIOError eqio_err = get_prim(subeq, eq, buf);
+	if (eqio_err < 0)
+		return eqio_err;
+	get_space(buf);
+	while (*buf->pos == '^') {
+		buf->pos++;
+		get_space(buf);
+		struct Node *subeq1 = NULL;
+		eqio_err = get_prim(&subeq1, eq, buf);
+		if (eqio_err < 0)
+			return eqio_err;
+		*subeq = new_op(MATH_POW, *subeq, subeq1);
+		if (eq_err < 0)
+			return EQIO_EQUATION_ERR;
+		get_space(buf);
+	}
+	return EQIO_NO_ERR;
+}
+
+static enum EquationIOError get_prim(struct Node **subeq, struct Equation *eq,
+									 struct Buffer *buf)
+{
+	assert(subeq);
+	assert(eq);
+	assert(buf);
+
+	enum EquationIOError eqio_err = EQIO_NO_ERR;
+	if (*buf->pos == '(') {
+		buf->pos++;
+		get_space(buf);
+		eqio_err = get_add(subeq, eq, buf);
+		if (eqio_err < 0)
+			return eqio_err;
+		get_space(buf);
+		if (*buf->pos == ')') {
+			buf->pos++;
+			return EQIO_NO_ERR;
+		}
+		return EQIO_SYNTAX_ERR;
+	} else if (isdigit(*buf->pos) || *buf->pos == '-') {
+		return get_num(subeq, eq, buf);
+	}
+	eqio_err = get_func(subeq, eq, buf);
+	if (eqio_err == EQIO_UNKNOWN_FUNC_ERR)
+		return get_var(subeq, eq, buf);
+	return eqio_err;
+}
+
+static enum EquationIOError get_func(struct Node **subeq, struct Equation *eq,
+									 struct Buffer *buf)
+{
+	assert(subeq);
+	assert(eq);
+	assert(buf);
+
+	enum EquationIOError eqio_err = EQIO_NO_ERR;
+	enum EquationError eq_err = EQ_NO_ERR;
+	enum EquationError *err = &eq_err;
+	for (size_t i = (size_t) MATH_POW; i < MATH_OP_DEFS_SIZE; i++) {
+		size_t name_len = strlen(MATH_OP_DEFS[i].name);
+		if (strncmp(buf->pos, MATH_OP_DEFS[i].name, name_len) == 0) {
+			if (*(buf->pos + name_len) != '(')
+				return EQIO_SYNTAX_ERR;
+			buf->pos += name_len + 1;
+			get_space(buf);
+			struct Node *subeq_arg = NULL;
+			eqio_err = get_add(&subeq_arg, eq, buf);
+			if (eqio_err < 0) {
+				node_op_delete(subeq_arg);
+				return EQIO_EQUATION_ERR;
+			}
+			*subeq = new_op((enum MathOp) i, NULL, subeq_arg);
+			if (eq_err < 0)
+				return EQIO_EQUATION_ERR;
+			get_space(buf);
+			if (*buf->pos != ')')
+				return EQIO_SYNTAX_ERR;
+			buf->pos++;
+			return EQIO_NO_ERR;
+		}
+	}
+	return EQIO_UNKNOWN_FUNC_ERR;
+}
+
+static enum EquationIOError get_num(struct Node **subeq, struct Equation *eq,
+									struct Buffer *buf)
+{
+	assert(subeq);
+	assert(eq);
+	assert(buf);
+
+	double val = 0.0;
+	char *old_pos = buf->pos;
+	enum EquationError eq_err = EQ_NO_ERR;
+	enum EquationError *err = &eq_err;
+
+	bool is_neg = false;
+	if (*buf->pos == '-') {
+		is_neg = true;
+		buf->pos++;
+	}
+
+	char *old_pos1 = buf->pos;
+	while ('0' <= *buf->pos && *buf->pos <= '9') {
+		val = val * 10 + *buf->pos - '0';
+		buf->pos++;
+	}
+	if (old_pos1 >= buf->pos) {
+		buf->pos = old_pos;
+		return EQIO_SYNTAX_ERR;
+	}
+
+	if (*buf->pos == '.') {
+		buf->pos++;
+		double cur_pow = 0.1;
+		char *old_pos2 = buf->pos;
+		while ('0' <= *buf->pos && *buf->pos <= '9') {
+			val += cur_pow * (*buf->pos - '0');
+			cur_pow /= 10;
+			buf->pos++;
+		}
+		if (old_pos2 >= buf->pos) {
+			buf->pos = old_pos;
 			return EQIO_SYNTAX_ERR;
 		}
 	}
 
+	if (is_neg)
+		val *= -1;
+
+	*subeq = new_num(val);
+	return EQIO_NO_ERR;
+}
+
+static enum EquationIOError get_var(struct Node **subeq, struct Equation *eq,
+									struct Buffer *buf)
+{
+	assert(subeq);
+	assert(eq);
+	assert(buf);
+
+	if (!(isalpha(*buf->pos) || *buf->pos == '_'))
+		return EQIO_SYNTAX_ERR;
+	char *old_pos = buf->pos;
+	buf->pos++;
+	while (isalnum(*buf->pos) || *buf->pos == '_')
+		buf->pos++;
+
+	enum EquationError eq_err = EQ_NO_ERR;
+	enum EquationError *err = &eq_err;
+	size_t var_len = buf->pos - old_pos;
 	for (size_t i = 0; i < eq->num_vars; i++) {
-		if (strncmp(eq->var_names[i], buf->pos, word_len) == 0 &&
-			strlen(eq->var_names[i]) == word_len) {
-			tok->type = MATH_VAR;
-			tok->value.var_ind = i;
-			buf->pos += word_len;
+		if (strncmp(eq->var_names[i], old_pos, var_len) == 0 &&
+			strlen(eq->var_names[i]) == var_len) {
+			*subeq = new_var(i);
+			if (eq_err < 0)
+				return EQIO_EQUATION_ERR;
 			return EQIO_NO_ERR;
 		}
 	}
@@ -212,13 +313,13 @@ static enum EquationIOError eq_read_var(struct MathToken *tok,
 		eq->cap_vars += EQ_DELTA_VARS_CAPACITY;
 	}
 
-	eq->var_names[eq->num_vars] = buf->pos;
-	//buf->pos[word_len] = '\0';
-	tok->type = MATH_VAR;
-	tok->value.var_ind = eq->num_vars;
+	eq->var_names[eq->num_vars] = strndup(old_pos, var_len);
+	if (!eq->var_names[eq->num_vars])
+		return EQIO_NO_MEM_ERR;
+	*subeq = new_var(eq->num_vars);
+	if (eq_err < 0)
+		return EQIO_EQUATION_ERR;
 	eq->num_vars++;
-	
-	buf->pos += word_len;
 
 	return EQIO_NO_ERR;
 }

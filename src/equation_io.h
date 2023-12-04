@@ -5,10 +5,13 @@
 #include "tree.h"
 
 enum EquationIOError {
-	EQIO_NO_MEM_ERR = -3,
-	EQIO_SYNTAX_ERR = -2,
-	EQIO_TREE_ERR	= -1,
-	EQIO_NO_ERR		= 0,
+	EQIO_UNKNOWN_FUNC_ERR = -6,
+	EQIO_UNKNOWN_ERR      = -5,
+	EQIO_EQUATION_ERR     = -4,
+	EQIO_NO_MEM_ERR       = -3,
+	EQIO_SYNTAX_ERR       = -2,
+	EQIO_TREE_ERR	      = -1,
+	EQIO_NO_ERR		      = 0,
 };
 
 const char *const OPEN_DELIM = "(";

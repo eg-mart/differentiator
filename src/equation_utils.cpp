@@ -5,6 +5,7 @@
 #include <stdlib.h>
 
 #include "equation_utils.h"
+#include "equation_dsl.h"
 #include "logger.h"
 
 static struct Node *subeq_differentiate(const struct Node *equation, 
@@ -15,10 +16,6 @@ static enum EquationError subeq_evaluate(struct Node *subeq, double *vals,
 										 double *res);
 
 static struct Node *eq_copy(struct Node *equation, enum EquationError *err);
-static struct Node *eq_new_operator(enum MathOp op, struct Node *left,
-									struct Node *right, enum EquationError *err);
-static struct Node *eq_new_number(double num, enum EquationError *err);
-static struct Node *eq_new_variable(size_t var_ind, enum EquationError *err);
 static void eq_change_to_num(struct Node *equation, double num);
 static void eq_change_to_op(struct Node *equation, enum MathOp op,
 							struct Node *left, struct Node *right);
@@ -26,9 +23,6 @@ static bool is_equal(double a, double b);
 
 #define diff(eq)			subeq_differentiate((eq), var, err)
 #define copy(eq) 			eq_copy((eq), err)
-#define new_op(op, l, r)	eq_new_operator((op), (l), (r), err)
-#define new_num(num)		eq_new_number((num), err)
-#define new_var(var)		eq_new_variable((var), err)
 #define to_num(eq, num) 	eq_change_to_num((eq), (num))
 #define to_op(eq, op, l, r) eq_change_to_op((eq), (op), (l), (r))
 #define move(dest, src)	 	eq_move((dest), (src))
@@ -54,6 +48,8 @@ void eq_dtor(struct Equation *eq)
 {
 	node_op_delete(eq->tree);
 	eq->tree = NULL;
+	for (size_t i = 0; i < eq->num_vars; i++)
+		free(eq->var_names[i]);
 	free(eq->var_names);
 	eq->var_names = NULL;
 	eq->cap_vars = (size_t) -1;
@@ -69,7 +65,8 @@ enum EquationError eq_differentiate(struct Equation eq, size_t diff_var_ind,
 	if (!tmp)
 		return EQ_NO_MEM_ERR;
 	diff->var_names = tmp;
-	memcpy(diff->var_names, eq.var_names, eq.cap_vars * sizeof(char*));
+	for (size_t i = 0; i < eq.num_vars; i++)
+		diff->var_names[i] = strdup(eq.var_names[i]);
 	diff->num_vars = eq.num_vars;
 	diff->cap_vars = eq.cap_vars;
 
@@ -213,7 +210,8 @@ enum EquationError eq_expand_into_teylor(struct Equation eq,
 	if (!tmp)
 		return EQ_NO_MEM_ERR;
 	teylor->var_names = tmp;
-	memcpy(teylor->var_names, eq.var_names, eq.cap_vars * sizeof(char*));
+	for (size_t i = 0; i < eq.num_vars; i++)
+		teylor->var_names[i] = strdup(eq.var_names[i]);
 	teylor->num_vars = eq.num_vars;
 	teylor->cap_vars = eq.cap_vars;
 
@@ -258,9 +256,10 @@ enum EquationError eq_expand_into_teylor(struct Equation eq,
 		eq_err = eq_differentiate(n_diff, 0, &eq_tmp);
 		if (eq_err < 0)
 			goto finally;
-		node_op_delete(n_diff.tree);
-		n_diff.tree = eq_tmp.tree;
+		eq_dtor(&n_diff);
+		n_diff = eq_tmp;
 		eq_tmp.tree = NULL;
+		eq_tmp.var_names = NULL;
 		eq_err = eq_simplify(&n_diff);
 		if (eq_err < 0)
 			goto finally;
@@ -268,7 +267,6 @@ enum EquationError eq_expand_into_teylor(struct Equation eq,
 
 	finally:
 		eq_dtor(&n_diff);
-		eq_dtor(&eq_tmp);
 		return eq_err;
 }
 
@@ -297,8 +295,8 @@ static struct Node *eq_copy(struct Node *equation, enum EquationError *err)
 	return new_node;
 }
 
-static struct Node *eq_new_operator(enum MathOp op, struct Node *left,
-									struct Node *right, enum EquationError *err)
+struct Node *eq_new_operator(enum MathOp op, struct Node *left,
+							 struct Node *right, enum EquationError *err)
 {
 	assert(err);
 
@@ -326,7 +324,7 @@ static struct Node *eq_new_operator(enum MathOp op, struct Node *left,
 	return new_node;
 }
 
-static struct Node *eq_new_number(double num, enum EquationError *err)
+struct Node *eq_new_number(double num, enum EquationError *err)
 {
 	assert(err);
 
@@ -350,7 +348,7 @@ static struct Node *eq_new_number(double num, enum EquationError *err)
 	return new_node;
 }
 
-static struct Node *eq_new_variable(size_t var_ind, enum EquationError *err)
+struct Node *eq_new_variable(size_t var_ind, enum EquationError *err)
 {
 	assert(err);
 
@@ -893,16 +891,15 @@ struct Node *math_diff_arcctg(const struct Node *equation, size_t var,
 	assert(type(equation) == MATH_OP);
 	assert(op(equation) == MATH_ARCCTG);
 
-	return new_op(MATH_MULT, new_num(-1), new_op(MATH_DIV, diff(eq_right), 
-				 new_op(MATH_ADD, new_num(1), 
-				  new_op(MATH_POW, copy(eq_right), new_num(2)))));
+	return new_op(MATH_DIV, diff(eq_right), new_op(MATH_ADD, new_num(1), 
+				  new_op(MATH_POW, copy(eq_right), new_num(2))));
 }
 
 double math_eval_arcctg(double l, double r, enum EquationError */*err*/)
 {
 	assert(isnan(l));
 	
-	return M_PI / 2 - atan(r);
+	return atan(r);
 }
 
 enum EquationError math_simplify_arcctg(struct Node */*equation*/)
