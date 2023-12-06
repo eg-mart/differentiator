@@ -4,6 +4,7 @@
 #include "tree.h"
 
 enum EquationError {
+	EQ_WRONG_CTG_ARG_ERR	= -9,
 	EQ_WRONG_ARCCOS_ARG_ERR	= -8,
 	EQ_WRONG_ARCSIN_ARG_ERR	= -7,
 	EQ_LN_NEGATIVE_ARG_ERR	= -6,

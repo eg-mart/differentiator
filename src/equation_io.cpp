@@ -4,10 +4,11 @@
 #include <math.h>
 #include <stdlib.h>
 
+#include "equation_manipulation.h"
 #include "equation_io.h"
 #include "logger.h"
 #include "equation_utils.h"
-#include "equation_dsl.h"
+#include "gnuplot_i.h"
 
 static void clear_stdin();
 
@@ -30,6 +31,9 @@ static enum EquationIOError get_var(struct Node **subeq, struct Equation *eq,
 static void subeq_print(const struct Node *subeq, struct Equation eq, FILE *out);
 static void subeq_print_latex(const struct Node *subeq, struct Equation eq,
 							  FILE *out, bool put_brackets);
+
+static void eq_to_gnuplot_str(struct Node *subeq, struct Equation eq,
+							  struct Buffer *buf);
 
 enum EquationIOError eq_load_from_buf(struct Equation *eq, struct Buffer *buf)
 {
@@ -568,6 +572,84 @@ void eq_gen_latex_pdf(const char *filename)
 	strncat(cmd_buf, filename, CMD_BUF_SIZE - prefix_len);
 	strncat(cmd_buf, "\"", CMD_BUF_SIZE - prefix_len - strlen(filename));
 	system(cmd_buf);
+}
+
+enum EquationIOError eq_graph(struct Equation eq, const char *img_name)
+{
+	const size_t CMD_BUF_CAP = 1024;
+	char cmd_buf[1024] = "set output \"";
+	size_t cmd_buf_size = CMD_BUF_CAP - strlen(cmd_buf);
+	strncat(cmd_buf, img_name, cmd_buf_size);
+	cmd_buf_size -= strlen(img_name);
+	strncat(cmd_buf, "\"", cmd_buf_size);
+
+	gnuplot_ctrl *handle = gnuplot_init();
+	gnuplot_setterm(handle, "pngcairo", 1024, 768);
+	gnuplot_cmd(handle, cmd_buf);
+	gnuplot_setstyle(handle, "lines");
+
+	struct Buffer eq_buf = {};
+	buffer_ctor(&eq_buf);
+	eq_to_gnuplot_str(eq.tree, eq, &eq_buf);
+	log_message(INFO, "gnuplot str: %s\n", eq_buf.data);
+
+	gnuplot_cmd(handle, "set samples 10000");
+	gnuplot_cmd(handle, "set xrange [-4:4]");
+	gnuplot_cmd(handle, "set yrange [-50:50]");
+	gnuplot_plot_equation(handle, eq_buf.data, "fucking yeah!!!");
+	//gnuplot_cmd(handle, "set parametric");
+	//gnuplot_cmd(handle, "set urange [0:6*pi]");
+	//gnuplot_cmd(handle, "set vrange [0:1]");
+	//gnuplot_cmd(handle, "fx(v) = cos(v)");
+	//gnuplot_cmd(handle, "fy(v) = sin(v)");
+	//gnuplot_cmd(handle, "fz(v) = v");
+	//gnuplot_cmd(handle, "splot fx(v),fy(v),fz(v)");
+	gnuplot_close(handle);
+	buffer_dtor(&eq_buf);
+
+	return EQIO_NO_ERR;
+}
+
+static void eq_to_gnuplot_str(struct Node *subeq, struct Equation eq,
+							  struct Buffer *buf)
+{
+	if (!subeq)
+		return;
+
+	snprintf(buf->pos, buf->size - buffer_size(buf), "(");
+	buf->pos++;
+	eq_to_gnuplot_str(subeq->left, eq, buf);
+	if (subeq->data.type == MATH_OP) {
+		switch (subeq->data.value.op) {
+			case MATH_POW:
+				snprintf(buf->pos, buf->size - buffer_size(buf), "**");
+				break;
+			case MATH_TG:
+				snprintf(buf->pos, buf->size - buffer_size(buf), "tan");
+				break;
+			case MATH_CTG:
+				snprintf(buf->pos, buf->size - buffer_size(buf), "(1/tan");
+				break;
+			case MATH_ARCTG:
+				snprintf(buf->pos, buf->size - buffer_size(buf), "atan");
+				break;
+			default:
+				eq_print_token(buf->pos, subeq->data, eq,
+							   buf->size - buffer_size(buf));
+				break;
+		}
+	} else {
+		eq_print_token(buf->pos, subeq->data, eq,
+					   buf->size - buffer_size(buf));
+	}
+	buf->pos += strlen(buf->pos);
+	eq_to_gnuplot_str(subeq->right, eq, buf);
+	if (subeq->data.value.op == MATH_CTG) {
+		snprintf(buf->pos, buf->size - buffer_size(buf), ")");
+		buf->pos++;
+	}
+	snprintf(buf->pos, buf->size - buffer_size(buf), ")");
+	buf->pos++;
 }
 
 const char *eq_io_err_to_str(enum EquationIOError err)

@@ -27,5 +27,4 @@ enum EquationError eq_expand_into_teylor(struct Equation eq,
 										 size_t extent,
 										 struct Equation *teylor);
 
-
 #endif /*_EQUATION_UTILS_H*/

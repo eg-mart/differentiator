@@ -3,9 +3,11 @@
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #include "equation_utils.h"
-#include "equation_dsl.h"
+#include "equation_manipulation.h"
+#include "equation_io.h"
 #include "logger.h"
 
 static struct Node *subeq_differentiate(const struct Node *equation, 
@@ -15,23 +17,9 @@ static enum EquationError subeq_simplify(struct Node *equation);
 static enum EquationError subeq_evaluate(struct Node *subeq, double *vals,
 										 double *res);
 
-static struct Node *eq_copy(struct Node *equation, enum EquationError *err);
-static void eq_change_to_num(struct Node *equation, double num);
-static void eq_change_to_op(struct Node *equation, enum MathOp op,
-							struct Node *left, struct Node *right);
 static bool is_equal(double a, double b);
 
 #define diff(eq)			subeq_differentiate((eq), var, err)
-#define copy(eq) 			eq_copy((eq), err)
-#define to_num(eq, num) 	eq_change_to_num((eq), (num))
-#define to_op(eq, op, l, r) eq_change_to_op((eq), (op), (l), (r))
-#define move(dest, src)	 	eq_move((dest), (src))
-#define eq_left	 		 	equation->left
-#define eq_right 		 	equation->right
-#define type(eq)		 	(eq)->data.type
-#define num(eq)			 	(eq)->data.value.num
-#define var(eq)			 	(eq)->data.value.var_ind
-#define op(eq)			 	(eq)->data.value.op
 
 enum EquationError eq_ctor(struct Equation *eq)
 {
@@ -268,161 +256,6 @@ enum EquationError eq_expand_into_teylor(struct Equation eq,
 	finally:
 		eq_dtor(&n_diff);
 		return eq_err;
-}
-
-static struct Node *eq_copy(struct Node *equation, enum EquationError *err)
-{
-	assert(err);
-
-	if (!equation)
-		return NULL;
-	
-	struct MathToken data = equation->data;
-	struct Node *new_node = NULL;
-	enum TreeError tr_err = node_op_new(&new_node, data);
-
-	if (tr_err == TREE_NO_MEM_ERR) {
-		*err = EQ_NO_MEM_ERR;
-		return NULL;
-	} else if (tr_err < 0) {
-		*err = EQ_TREE_ERR;
-		return NULL;
-	}
-
-	new_node->left = copy(equation->left);
-	new_node->right = copy(equation->right);
-
-	return new_node;
-}
-
-struct Node *eq_new_operator(enum MathOp op, struct Node *left,
-							 struct Node *right, enum EquationError *err)
-{
-	assert(err);
-
-	struct MathToken data = {};
-	data.type = MATH_OP;
-	data.value.op = op;
-	struct Node *new_node = NULL;
-	enum TreeError tr_err = node_op_new(&new_node, data);
-
-	if (tr_err == TREE_NO_MEM_ERR) {
-		*err = EQ_NO_MEM_ERR;
-		node_op_delete(left);
-		node_op_delete(right);
-		return NULL;
-	} else if (tr_err < 0) {
-		*err = EQ_TREE_ERR;
-		node_op_delete(left);
-		node_op_delete(right);
-		return NULL;
-	}
-
-	new_node->left = left;
-	new_node->right = right;
-
-	return new_node;
-}
-
-struct Node *eq_new_number(double num, enum EquationError *err)
-{
-	assert(err);
-
-	struct MathToken data = {};
-	data.type = MATH_NUM;
-	data.value.num = num;
-	struct Node *new_node = NULL;
-	enum TreeError tr_err = node_op_new(&new_node, data);
-
-	if (tr_err == TREE_NO_MEM_ERR) {
-		*err = EQ_NO_MEM_ERR;
-		return NULL;
-	} else if (tr_err < 0) {
-		*err = EQ_TREE_ERR;
-		return NULL;
-	}
-
-	new_node->left = NULL;
-	new_node->right = NULL;
-
-	return new_node;
-}
-
-struct Node *eq_new_variable(size_t var_ind, enum EquationError *err)
-{
-	assert(err);
-
-	struct MathToken data = {};
-	data.type = MATH_VAR;
-	data.value.var_ind = var_ind;
-	struct Node *new_node = NULL;
-	enum TreeError tr_err = node_op_new(&new_node, data);
-
-	if (tr_err == TREE_NO_MEM_ERR) {
-		*err = EQ_NO_MEM_ERR;
-		return NULL;
-	} else if (tr_err < 0) {
-		*err = EQ_TREE_ERR;
-		return NULL;
-	}
-
-	new_node->left = NULL;
-	new_node->right = NULL;
-
-	return new_node;
-}
-
-static void eq_change_to_num(struct Node *equation, double num)
-{
-	assert(equation);
-
-	type(equation) = MATH_NUM;
-	num(equation) = num;
-	node_op_delete(eq_left);
-	node_op_delete(eq_right);
-	equation->left = NULL;
-	equation->right = NULL;
-}
-
-static void eq_change_to_op(struct Node *equation, enum MathOp op,
-							struct Node *left, struct Node *right)
-{
-	assert(equation);
-	assert(left);
-	assert(right);
-	
-	type(equation) = MATH_OP;
-	op(equation) = op;
-	node_op_delete(equation->left);
-	node_op_delete(equation->right);
-	equation->left = left;
-	equation->right = right;
-}
-
-static void eq_lift_up_left(struct Node *equation)
-{
-	assert(equation);
-	assert(equation->left);
-
-	struct Node *left = equation->left;
-	node_op_delete(equation->right);
-	equation->data = left->data;
-	equation->right = left->right;
-	equation->left = left->left;
-	free(left);
-}
-
-static void eq_lift_up_right(struct Node *equation)
-{
-	assert(equation);
-	assert(equation->right);
-
-	struct Node *right = equation->right;
-	node_op_delete(equation->left);
-	equation->data = right->data;
-	equation->right = right->right;
-	equation->left = right->left;
-	free(right);
 }
 
 static bool is_equal(double a, double b)
@@ -784,10 +617,14 @@ struct Node *math_diff_ctg(const struct Node *equation, size_t var,
 				  		 new_num(2))));
 }
 
-double math_eval_ctg(double l, double r, enum EquationError */*err*/)
+double math_eval_ctg(double l, double r, enum EquationError *err)
 {
 	assert(isnan(l));
 
+	if (is_equal(tan(r), 0)) {
+		*err = EQ_WRONG_CTG_ARG_ERR;
+		return NAN;
+	}
 	return 1 / tan(r);
 }
 

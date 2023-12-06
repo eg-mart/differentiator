@@ -15,6 +15,7 @@ void print_math_token(char *buf, struct MathToken tok, size_t n);
 enum ArgError handle_input_filename(const char *arg_str, void *processed_args);
 enum ArgError handle_dump_filename(const char *arg_str, void *processed_args);
 enum ArgError handle_latex_filename(const char *arg_str, void *processed_args);
+enum ArgError handle_graph_filename(const char *arg_str, void *processed_args);
 enum ArgError handle_eval_mode(const char *arg_str, void *processed_args);
 enum ArgError handle_teylor_extent(const char *arg_str, void *processed_args);
 
@@ -22,6 +23,7 @@ struct CmdArgs {
 	const char *input_file;
 	const char *dump_file;
 	const char *latex_file;
+	const char *graph_file;
 	bool eval_mode;
 	size_t teylor_extent;
 };
@@ -37,6 +39,8 @@ const ArgDef arg_defs[] = {
 	 true, true,  handle_eval_mode},
 	{"taylor",'\0', "Set extent to which equation will be expanded into"
 	 " Teylor's series (3 by default)", true, false, handle_teylor_extent},
+	{"graph", '\0', "WIP",
+	 true, false, handle_graph_filename},
 };
 const size_t ARG_DEFS_SIZE = sizeof(arg_defs) / sizeof(arg_defs[0]);
 
@@ -52,7 +56,7 @@ int main(int argc, const char *argv[])
 	enum EquationIOError eqio_err = EQIO_NO_ERR;
 	enum EquationError eq_err = EQ_NO_ERR;
 
-	struct CmdArgs args = {NULL, NULL, NULL, false, 3};
+	struct CmdArgs args = {NULL, NULL, NULL, NULL, false, 3};
 	struct Buffer buf = {};
 	struct Equation eq = {};
 	struct Equation diff = {};
@@ -185,6 +189,10 @@ int main(int argc, const char *argv[])
 		eq_print_latex(teylor, latex);
 	}
 
+	if (args.graph_file) {
+		eq_graph(eq, args.graph_file);
+	}
+
 	if (latex) {
 		eq_end_latex_print(latex);
 		fclose(latex);
@@ -247,5 +255,12 @@ enum ArgError handle_teylor_extent(const char *arg_str, void *processed_args)
 	int read = sscanf(arg_str, "%lu", &args->teylor_extent);
 	if (read != 1)
 		return ARG_WRONG_ARGS_ERR;
+	return ARG_NO_ERR;
+}
+
+enum ArgError handle_graph_filename(const char *arg_str, void *processed_args)
+{
+	struct CmdArgs *args = (struct CmdArgs*) processed_args;
+	args->graph_file = arg_str;
 	return ARG_NO_ERR;
 }
